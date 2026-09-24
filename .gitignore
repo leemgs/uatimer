@@ -11,3 +11,4 @@ traces/*.trace
 results/
 data/raw_runs.csv
 notebooks/.ipynb_checkpoints/
+notebooks/uatimer_out/
