@@ -6,7 +6,7 @@ This checklist separates manuscript items already addressed from items that requ
 
 - [x] Uses the IEEE two-column journal class (`IEEEtran`, journal mode).
 - [x] Title is concise and explicitly foregrounds heterogeneous IoT systems.
-- [x] Abstract is one paragraph, 227 words, contains no citations and no displayed equations (IoT-J requires 150-250 words).
+- [x] Abstract is one paragraph, 245 words, contains no citations and no displayed equations (IoT-J requires 150-250 words).
 - [x] Keywords include IoT and constrained-device/power-management terminology.
 - [x] Main PDF compiles to exactly 8 pages. IoT-J charges mandatory overlength fees after the first 8 published pages; final typesetting can still shift pagination.
 - [x] Human-subject MOS/QoE results were removed from this submission-ready version because no IRB/ethics-board and consent documentation was available in the source material.
@@ -36,4 +36,4 @@ This checklist separates manuscript items already addressed from items that requ
 
 ## Desk-reject risks that are not solved by formatting
 
-The manuscript is now substantially cleaner from a submission-compliance standpoint, but editor screening can still reject for technical reasons. The largest remaining risks are limited quantitative IoT-platform breadth (one principal IoT node), only five repetitions per condition, absence of raw per-run dispersion data, and a relatively lightweight ML baseline. These are scientific-strength issues rather than author-guideline violations.
+The manuscript is now substantially cleaner from a submission-compliance standpoint, but editor screening can still reject for technical reasons. The largest remaining risks are limited quantitative IoT-platform breadth (one principal IoT node), a relatively lightweight ML baseline (twenty repetitions per condition, with 95% CIs and Bonferroni-corrected significance, are now reported). These are scientific-strength issues rather than author-guideline violations.
