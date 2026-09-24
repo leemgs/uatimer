@@ -6,3 +6,8 @@ build/
 
 # Generated example traces (recreate with: python3 tools/gen_trace.py)
 traces/*.trace
+
+# Measurement outputs and real data (author-supplied)
+results/
+data/raw_runs.csv
+notebooks/.ipynb_checkpoints/

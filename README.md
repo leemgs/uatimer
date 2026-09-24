@@ -21,6 +21,7 @@ performs the actual low-power transition.
 | Lightweight linear-regression baseline (§IV-C) | ✅ `src/lr_baseline.c` |
 | Trace-driven functional harness | ✅ `src/replay.c` |
 | Unit tests for the paper's stated properties | ✅ `src/test_uatimer.c` |
+| Measurement & analysis pipeline (stats, figures, LaTeX tables) | ✅ `notebooks/uatimer_analysis.ipynb` |
 | **Measured parameter values, energy datasets, raw per-run samples** | ❌ author-supplied; see note below |
 
 > **The replay harness models the control logic, not device power.** It
@@ -85,13 +86,28 @@ policy core compiles unchanged.
 - **Algorithm 1** event-driven control → `ua_on_event`/`ua_set_mode`/`ua_on_expiry`
 - **Proposition 1** mode ordering → checked in `src/test_uatimer.c`
 
+## Measurement and analysis
+
+`notebooks/uatimer_analysis.ipynb` is the analysis pipeline. It reads raw
+per-run measurements from `data/raw_runs.csv` (schema in `data/README.md`)
+and produces per-condition means with 95% confidence intervals, energy
+reductions with propagated uncertainty, Wilcoxon significance tests, the
+energy–delay and per-workload figures, and `\input`-ready LaTeX for the
+results/reduction tables. It also includes hardware data-collection
+templates (power-meter loop and trace replay).
+
+The notebook ships with `USE_SYNTHETIC_DEMO = True` so it runs before data
+exists; those numbers are random illustration, not measurements. Set it to
+`False` once `data/raw_runs.csv` is filled.
+
 ## Reproducing the paper's measurements
 
 The energy/latency results require the target hardware, the power meters,
 and the tuned parameter values, none of which are included here. To
-reproduce them, populate `config/` with the measured parameters for each
-platform, provide the recorded event traces, and add the measurement
-scripts. See the open items in `paper/SUBMISSION_CHECKLIST.md`.
+reproduce them: populate `config/` with the measured parameters for each
+platform, record the event traces, fill `data/raw_runs.csv` with real
+per-run measurements, and run the analysis notebook. See the open items in
+`paper/SUBMISSION_CHECKLIST.md`.
 
 ## License
 
