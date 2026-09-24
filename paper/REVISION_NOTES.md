@@ -17,7 +17,7 @@
 | M7 AR/VR 역설 | Baseline보다 드롭률이 낮은 이유를 메커니즘으로 설명할 수 없다고 인정하고, 주장을 "악화시키지 않았다"로 축소. 28 ms 지연과 프레임 주기의 관계 명확화 | 해결 |
 | M8 약한 baseline, footprint 모순 | 초록의 "smaller policy footprint"를 삭제하고 "without an offline training phase"로 교체. Table IV의 ML 행 수정(Inputs only / Offline fit / 4 coeff < 64 B). 고정 타임아웃이 `T_be`로 튜닝되지 않았다는 점 명시. 더 강한 baseline은 후속 실험 목록에 포함 | 원고 수준 해결, 실험은 필요 |
 | M9 IoT 적합성 | 한계로 명시하고 후속 측정 목록(iv)에 포함 | **실험 필요** |
-| M10 재현성 | 저장소에 코드가 없다는 점을 `\authorcheck`로 표시 | **저자 조치 필요** |
+| M10 재현성 | 논문이 약속한 **참조 구현을 저장소에 추가**: 이식 가능한 정책 코어(Algorithm 1, 식 3·6·7), Linux `epoll`/`timerfd` 백엔드, LR baseline, 단위 테스트(명제 1 등 검증), 트레이스 재생 하니스, README, Makefile, Apache-2.0 라이선스. 하니스는 제어 동작만 모델링하며 에너지(mJ)는 재현하지 않는다고 명시. 남은 항목(측정 파라미터·트레이스·원시 데이터)은 `\authorcheck` | 코드 추가 완료. 측정 데이터는 **저자 조치 필요** |
 | m1 평균 27.3% | 27.7%로 수정. Table VI에 평균 행 추가(27.7 / 11.6 / 2.7) | 해결 |
 | m2 safaei 미인용 | §II-B에서 인용 | 해결 |
 | m3 Algorithm이 figure로 표시됨 | `algorithm` + `algpseudocode`로 교체 | 해결 |

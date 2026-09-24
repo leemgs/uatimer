@@ -1,1 +1,8 @@
 .env
+
+# Build artifacts
+build/
+*.o
+
+# Generated example traces (recreate with: python3 tools/gen_trace.py)
+traces/*.trace
