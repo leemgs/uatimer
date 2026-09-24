@@ -11,7 +11,16 @@
 \usetikzlibrary{arrows.meta,positioning,shapes.geometric}
 \usepackage{pgfplots}
 \pgfplotsset{compat=1.18}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
 \usepackage{balance}
+
+% Items that only the author can supply (platform details, parameter values
+% used in the experiments). Every \authorcheck must be resolved and the macro
+% removed before submission.
+\newcommand{\authorcheck}[1]{\textcolor{red}{[#1]}}
+
+\newtheorem{proposition}{Proposition}
 
 \title{UATimer: Lightweight Context-Aware Power Management for Heterogeneous IoT Systems}
 
@@ -23,59 +32,46 @@
 \maketitle
 
 \begin{abstract}
-Energy-constrained Internet-of-Things (IoT) devices must enter low-power states aggressively without imposing unacceptable wake-up delay. Fixed inactivity timeouts are inexpensive but insensitive to changing activity, while predictive policies can add training, inference, and model-management overhead. This paper presents UATimer, a lightweight context-aware adaptive timer that updates an idle threshold from observed inter-event intervals and shifts energy--latency priorities using coarse application context. The framework runs in user space, uses standard timer and event interfaces, requires fewer than 500 lines of code and less than 1~KB of policy state, and does not require kernel modification. We evaluate the mechanism on a smartphone, a tablet, and an IoT sensor node using web browsing, video playback, on-device AI inference, AR/VR gaming, and periodic sensing workloads. Across the reported workload means, UATimer reduces energy by 20.5--37.5\% relative to the default baseline and by 7.9--16.7\% relative to a fixed-timeout policy while keeping average event delay below 50~ms. In the AR/VR workload, it reports a 0.5\% frame-drop rate and 1.2~ms jitter. Against a deliberately lightweight linear-regression predictor, UATimer yields similar energy values with a smaller policy footprint and no trained model. The results support UATimer as a deployable policy layer between static timeouts and heavier predictive power-management approaches.
+Energy-constrained Internet-of-Things (IoT) devices must enter low-power states aggressively without imposing unacceptable wake-up delay. Fixed inactivity timeouts are inexpensive but insensitive to changing activity, while learning-based policies add training, inference, and model-management overhead. This paper presents UATimer, a portable power-management policy layer that combines the classical exponential-average idle estimator with bounded, context-selected energy--latency operating modes. A break-even floor prevents unprofitable transitions, and a latency-critical mode can widen the threshold or inhibit suspension while an interactive session is active. The policy is event-driven, requires fewer than 500 lines of code and less than 1~KB of policy state, needs no training phase, and on Linux and Android runs in user space without kernel modification. We evaluate the mechanism on a smartphone, a tablet, and an IoT sensor node using web browsing, video playback, on-device AI inference, AR/VR gaming, and periodic sensing workloads. Across the reported workload means, UATimer reduces energy by 20.5--37.5\% relative to the default baseline and by 7.9--16.7\% relative to a fixed-timeout policy while keeping mean event delay below 50~ms. In the AR/VR workload, it reports a 0.5\% frame-drop rate and 1.2~ms jitter. Against a lightweight linear-regression predictor, its mean energy is within 4\% without an offline training phase. The results position UATimer as an inspectable policy layer between static timeouts and heavier predictive power managers, and we identify the measurements still required to establish its generality.
 \end{abstract}
 
 \begin{IEEEkeywords}
-Internet of Things, constrained devices, power management, energy efficiency, adaptive timer, context-aware systems, embedded systems.
+Internet of Things, constrained devices, dynamic power management, energy efficiency, adaptive timeout, context-aware systems, embedded systems.
 \end{IEEEkeywords}
 
 \section{Introduction}
 \IEEEPARstart{B}{attery}-operated IoT and mobile-edge platforms increasingly execute interactive, sensing, communication, and inference workloads on the same device. Their energy budget is constrained not only by computation but also by repeated transitions among active, idle, and low-power states. A timeout that is too long wastes energy during idle intervals, whereas an overly aggressive timeout increases wake-up frequency and response delay. This tension is particularly important for systems that mix latency-sensitive tasks with long background idle periods.
 
-Conventional operating-system power policies typically rely on fixed inactivity thresholds or coarse state machines. Such approaches are attractive because they are deterministic and inexpensive, but they can be poorly aligned with actual user behavior. Network-assisted duty cycling and IoT power-saving modes reduce active time, but their energy--latency behavior depends strongly on radio and paging configuration~\cite{michelinakis2021nbiot,eaps2022}. Mobile-system studies likewise show that idle and suspended states materially affect device energy use~\cite{carroll2010power}. These mechanisms do not directly solve the application-level question of how an interactive endpoint should adapt its suspend threshold to changing activity.
+The question of \emph{when} to shut down an idle component is the classical dynamic power management (DPM) problem~\cite{benini2000survey}. Fixed timeouts, predictive shutdown based on idle-interval history~\cite{srivastava1996predictive,hwang2000predictive}, adaptive timeouts~\cite{douglis1995adaptive,helmbold1996dynamic}, and stochastic or event-driven policies~\cite{simunic2001event} have been studied extensively, and modern operating systems embed history-based idle governors~\cite{pallipadi2007cpuidle}. Network-assisted duty cycling and IoT power-saving modes further reduce active time, but their energy--latency behavior depends strongly on radio and paging configuration~\cite{michelinakis2021nbiot,eaps2022}. Mobile-system studies likewise show that idle and suspended states materially affect device energy use~\cite{carroll2010power}.
 
-Recent work has explored context-aware mobile scheduling~\cite{lee2017cas}, predictive sleep scheduling~\cite{eaps2022}, and learning-based sleep policies for energy-constrained IoT systems~\cite{ko2025rass,ruiz2026wakeup}. However, the cost of adaptation can be non-trivial for resource-constrained devices. For small embedded platforms, even lightweight models introduce additional state, inference logic, and model-management complexity. This motivates a design point that is more adaptive than a fixed timeout but substantially simpler than a predictive learning system.
+Recent work has explored context-aware mobile scheduling~\cite{lee2017cas}, predictive sleep scheduling~\cite{eaps2022}, and learning-based sleep policies for energy-constrained IoT systems~\cite{ko2025rass,ruiz2026wakeup}. For small embedded platforms, however, even lightweight models introduce additional state, inference logic, and model-management complexity. At the other extreme, OS idle governors are tied to a specific kernel and processor idle-state interface and do not receive application-level context. This leaves a practical gap for a policy that (i) reuses a well-understood, training-free estimator, (ii) accepts coarse application context with bounded and inspectable effect, and (iii) can be carried across Linux, Android, and microcontroller firmware with only the suspend primitive changed.
 
-This paper develops such a design through a \emph{user-aware adaptive timer}. The framework observes inter-event idle periods, updates the timeout online, and modifies the energy--latency preference according to lightweight context. It is implemented as a user-space component that interoperates with existing Linux/Android power-management stacks and standard timer APIs. The design targets heterogeneous platforms ranging from smartphones and tablets to low-power IoT sensor nodes.
+This paper addresses that gap with UATimer, a \emph{user-aware adaptive timer}. We do not claim a new idle-interval predictor: the exponential average of past idle intervals that UATimer uses is the estimator of classical predictive shutdown~\cite{hwang2000predictive}. The contribution lies in how the estimator is bounded, coupled to context, and deployed across heterogeneous endpoints.
 
 The main contributions are as follows:
 \begin{itemize}
-    \item We present a deployable user-space power-management layer that separates a portable suspend/resume mechanism from an online timeout policy, avoiding kernel modification and model training.
-    \item We use a constant-state exponentially weighted idle-history update together with explicit context-dependent energy--delay priorities; the smoothing coefficient and objective weights are defined separately to avoid conflating temporal adaptation with policy preference.
-    \item We describe an implementation with fewer than 500 lines of code and less than 1~KB of policy state, using PowerHAL-related callbacks on Android and \texttt{epoll}-based event hooks on Linux.
-    \item We evaluate the mechanism across smartphone, tablet, and IoT-node platforms and five representative workloads, reporting energy, latency, and AR/VR quality indicators while explicitly identifying the limited IoT-platform breadth and five-run sample size.
-    \item We compare against default OS behavior, fixed timeouts, and a deliberately lightweight linear-regression predictor. The comparison is positioned as evidence for a low-complexity operating point, not as a claim of superiority over modern TinyML or learning-based power managers.
+    \item We design a portable policy layer that separates an online timeout policy from the platform suspend/resume mechanism. On Linux and Android it runs in user space without kernel modification; on a microcontroller the same policy code calls the vendor sleep interface.
+    \item We couple the classical exponential-average idle estimator to a small set of context-selected operating modes. We show that the mode ordering follows from a monotonicity property of the energy--delay objective (Proposition~\ref{prop:monotone}), and we bound the resulting threshold below by the platform break-even time.
+    \item We describe an event-driven implementation with fewer than 500 lines of code and less than 1~KB of policy state, using PowerHAL-related callbacks on Android, \texttt{epoll} with a high-resolution timer on Linux, and the firmware event loop on the IoT node.
+    \item We evaluate the mechanism on smartphone, tablet, and IoT-node platforms with five workloads, report energy, latency, and AR/VR rendering indicators, and state explicitly which conclusions the present data do and do not support.
 \end{itemize}
 
-The remainder of this paper is organized as follows. Section~II summarizes the design motivation and related approaches. Section~III presents the system architecture and adaptation algorithm. Section~IV describes the implementation. Section~V explains the experimental methodology, and Section~VI reports the results. Section~VII discusses implications, limitations, and extensions, followed by the conclusion in Section~VIII.
+Section~II reviews related power-management approaches and the design requirements. Section~III presents the framework, including the break-even analysis and the context mechanism. Section~IV describes the implementation, Section~V the methodology, and Section~VI the results. Section~VII discusses the results, threats to validity, and limitations, and Section~VIII concludes.
 
-\section{Background and Design Motivation}
-\subsection{Idle-State Power Management}
-Mobile and IoT systems spend substantial time waiting for user input, network packets, sensor events, or periodic timers. Entering a deeper low-power state during these intervals can reduce energy consumption, but the transition itself carries latency and energy costs. Therefore, an effective policy must decide not only \emph{whether} to suspend but also \emph{when} to do so.
+\section{Background and Related Work}
+\subsection{Classical Dynamic Power Management}
+DPM policies decide when an idle component should enter a lower-power state whose entry and exit cost time and energy~\cite{benini2000survey}. A transition is profitable only if the subsequent idle period exceeds the \emph{break-even time} $T_{be}$, defined in Section~III-B. Timeout policies wait for a fixed period before shutting down. A timeout equal to $T_{be}$ is 2-competitive with respect to an offline optimal policy for a two-state device~\cite{karlin1994competitive}, and the analysis extends to devices with multiple sleep states~\cite{irani2003online}.
 
-Fixed inactivity timeouts are commonly used because their behavior is predictable. Prior mobile work has shown that user context can expose idle intervals suitable for energy saving~\cite{pefkianakis2014idle,kim2012diapause}, while empirical NB-IoT studies show that power-state and paging configuration materially affect device energy consumption~\cite{michelinakis2021nbiot}. The drawback is that a fixed threshold cannot distinguish a bursty interactive session from a long unattended interval. A threshold chosen for responsiveness may remain too conservative at night or during sparse sensing, while a threshold optimized for energy saving can be disruptive during an AR/VR session.
+Predictive policies estimate the length of the upcoming idle period from history. Srivastava \emph{et al.}~\cite{srivastava1996predictive} used regression on previous active and idle periods, and Hwang and Wu~\cite{hwang2000predictive} used an exponential average of past idle intervals together with correction mechanisms for misprediction. Adaptive disk spin-down policies adjust the timeout online from the observed cost of recent decisions~\cite{douglis1995adaptive,helmbold1996dynamic}. Stochastic formulations model request arrivals and optimize expected power under a performance constraint~\cite{simunic2001event}.
+
+\subsection{Operating-System and Protocol Mechanisms}
+Modern kernels embed history-based idle selection. The Linux \texttt{cpuidle} framework chooses a processor idle state per CPU from recent idle history and predicted wake-up time through its governors~\cite{pallipadi2007cpuidle}, and device runtime power management offers per-device autosuspend delays. These mechanisms are effective but operate on processor idle states or individual devices, and they do not receive application context such as ``an AR session is active.'' Mobile platforms add system-level policies, and prior work has shown that user and network context can expose idle intervals suitable for energy saving~\cite{pefkianakis2014idle,kim2012diapause}. In IoT networks, energy is also managed at the protocol layer through routing objective functions~\cite{safaei2021elite}, radio power-saving modes~\cite{michelinakis2021nbiot}, and predictive or learned sleep schedules~\cite{eaps2022,ruiz2026wakeup}.
 
 \subsection{Learning-Based Policies}
-Learning-based schedulers attempt to predict future idle intervals or workload states. In principle, prediction can reduce unnecessary transitions and increase energy savings. In practice, learning introduces new implementation requirements: feature extraction, model state, inference, training or retraining, and potentially hardware acceleration. These costs may be acceptable on high-end systems but less attractive for small IoT nodes or products that prioritize deterministic behavior and implementation simplicity.
+Learning-based schedulers predict future idle intervals or workload states, including deep reinforcement learning for energy-harvesting IoT~\cite{ko2025rass} and QoS-aware co-optimization of scheduling and frequency governing on mobile devices~\cite{sang2024qos}. Prediction can reduce unnecessary transitions, but it introduces feature extraction, model state, inference, training or retraining, and sometimes hardware acceleration. These costs may be acceptable on high-end systems but are less attractive for small IoT nodes or products that prioritize deterministic, inspectable behavior.
 
-The proposed framework is deliberately positioned between these two extremes. It uses recent observed idle intervals to adapt the timeout and allows simple context rules to adjust priorities. No training phase is required, and the policy state can be represented by a small number of scalar variables.
-
-\subsection{Design Goals}
-The framework was designed around five goals:
-\begin{enumerate}
-    \item \textbf{Low overhead:} negligible CPU and memory cost in comparison with the managed workload.
-    \item \textbf{Responsiveness:} wake-up delay should remain suitable for interactive use.
-    \item \textbf{Adaptivity:} the timeout should follow changing idle behavior rather than remaining fixed.
-    \item \textbf{Portability:} the implementation should depend on generic user-space timer and event mechanisms rather than ISA-specific optimizations.
-    \item \textbf{Deployability:} integration should not require kernel or driver modifications.
-\end{enumerate}
-
-
-\subsection{Relation to Existing Power-Management Techniques}
-The proposed timer is intended to complement, rather than replace, established platform mechanisms. DVFS controls the energy cost of computation by changing voltage and frequency, while timer-based suspend/resume controls whether the platform should remain active during an idle interval. Network-side mechanisms such as duty cycling and predictive sleep scheduling reduce communication activity according to protocol behavior or learned delivery timing~\cite{eaps2022,ruiz2026wakeup}. UATimer operates at a different layer: it uses observed application and user activity to decide when a generic low-power transition is worthwhile. Consequently, the framework can coexist with processor-level DVFS and radio-specific power-saving mechanisms.
-
-This distinction is also relevant to learning-based schedulers. A predictor attempts to estimate future behavior before making a transition decision. UATimer instead reacts to measured idle history and a small set of context labels. The latter cannot exploit complex latent correlations that might be available to a richer model, but it avoids training data, model distribution, inference dependencies, and retraining when the workload mix changes. For resource-constrained IoT nodes, eliminating these dependencies can be a meaningful engineering advantage even when the memory footprint of an individual model is small.
+\subsection{Positioning and Design Requirements}
+Table~\ref{tab:positioning} summarizes where UATimer sits. It complements rather than replaces processor-level DVFS and idle governors and radio-specific power saving. Its role is to decide, from application-level activity and context, when a platform-defined low-power transition is worthwhile.
 
 \begin{table}[t]
 \caption{Positioning of UATimer Relative to Common Techniques}
@@ -83,40 +79,41 @@ This distinction is also relevant to learning-based schedulers. A predictor atte
 \centering
 \scriptsize
 \setlength{\tabcolsep}{2.2pt}
-\begin{tabular}{p{0.18\columnwidth}p{0.21\columnwidth}p{0.20\columnwidth}p{0.27\columnwidth}}
+\begin{tabular}{>{\raggedright\arraybackslash}p{0.19\columnwidth}>{\raggedright\arraybackslash}p{0.22\columnwidth}>{\raggedright\arraybackslash}p{0.20\columnwidth}>{\raggedright\arraybackslash}p{0.27\columnwidth}}
 \toprule
-Technique & Primary control variable & Typical strength & Limitation addressed by UATimer \\
+Technique & Primary control variable & Typical strength & Main limitation \\
 \midrule
 Fixed timeout & Idle duration & Simplicity, determinism & No workload adaptation \\
-DVFS/task mapping & Voltage/frequency, placement & Compute efficiency & Does not decide idle suspend timing \\
-Protocol duty cycle & Radio/sampling schedule & Communication energy & Often schedule-driven \\
+Predictive shutdown & Predicted idle length & Early shutdown & No application context \\
+OS idle governor & Per-CPU idle state & Fine-grained, in-kernel & Kernel/ISA specific; no app context \\
+DVFS/task mapping & Voltage/frequency, placement & Compute efficiency & Does not decide suspend timing \\
+Protocol duty cycle & Radio/sampling schedule & Communication energy & Tied to protocol schedule \\
 ML scheduler & Predicted idle/workload state & Rich adaptation & Training/inference complexity \\
-UATimer & Adaptive idle threshold & Low-cost online adaptation & Coarse rather than learned context \\
+UATimer & Bounded adaptive threshold & Portable, inspectable & Coarse, rule-based context \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\subsection{IoT-Oriented Design Requirements}
-An IoT-oriented policy must operate under constraints that are less visible on server-class systems. First, policy state should remain small enough to coexist with application buffers and protocol stacks on memory-constrained nodes. Second, adaptation should not require a persistent training pipeline, because many deployed devices have intermittent connectivity and long maintenance cycles. Third, the control path should be inspectable: a developer should be able to determine why a particular timeout was selected and to impose platform-specific minimum or maximum values. Finally, the same policy should remain usable when the endpoint changes from an interactive mobile device to a sensing node.
-
-UATimer follows these requirements by maintaining only the current threshold, recent timing information, and a small amount of context state. The update in Eq.~\eqref{eq:update} is independent of the processor instruction set and does not assume a specific radio technology. The power-controller interface is therefore the platform-specific boundary: Android can map a transition to existing power-management services, Linux can use its suspend interfaces, and an MCU-class platform can map the same decision to its supported sleep state. This separation is central to the heterogeneous-system objective of the design.
-
-\subsection{Parameterization Strategy}
-The design uses representative energy-conservative, balanced, and latency-critical weight settings rather than a single universal configuration. This is appropriate because the acceptable latency penalty is application-dependent. A practical configuration process can therefore proceed in two stages. The platform first selects safe bounds $T_{min}$ and $T_{max}$ from its wake-up characteristics. The application then selects a context mode that determines the relative emphasis in Eq.~\eqref{eq:cost}. Within those limits, Eq.~\eqref{eq:update} continuously adapts to observed idle behavior.
-
-This decomposition keeps parameter tuning interpretable. The smoothing factor $\lambda$ determines temporal responsiveness, the threshold bounds encode platform constraints, and $(w_E,w_D)$ encode application preference. None of these quantities requires a learned model. If future implementations introduce TinyML or statistical prediction, the predictor can be used to propose $t_{idle}$ while retaining the same bounded power-control interface.
+An IoT-oriented policy must operate under constraints that are less visible on server-class systems. First, policy state should remain small enough to coexist with application buffers and protocol stacks on memory-constrained nodes. Second, adaptation should not require a persistent training pipeline, because many deployed devices have intermittent connectivity and long maintenance cycles. Third, the control path should be inspectable: a developer should be able to determine why a particular timeout was selected and to impose platform-specific minimum or maximum values. Finally, the same policy should remain usable when the endpoint changes from an interactive mobile device to a sensing node. These requirements translate into five design goals:
+\begin{enumerate}
+    \item \textbf{Low overhead:} constant-size state and $O(1)$ work per event.
+    \item \textbf{Responsiveness:} wake-up delay should remain suitable for interactive use.
+    \item \textbf{Adaptivity:} the timeout should follow changing idle behavior.
+    \item \textbf{Portability:} dependence only on generic timer and event mechanisms and a platform suspend primitive.
+    \item \textbf{Deployability:} no kernel or driver modification on Linux and Android.
+\end{enumerate}
 
 \section{User-Aware Adaptive Timer Framework}
 \subsection{System Architecture}
-Fig.~\ref{fig:arch} shows the architecture. The \emph{User Interaction Monitor} captures user input and background events. The \emph{Timer Manager} maintains and updates the idle threshold. The \emph{Power Controller} invokes the underlying low-power transition and resumes the system on a new event.
+Fig.~\ref{fig:arch} shows the architecture. The \emph{User Interaction Monitor} captures user input and background events and supplies a context label. The \emph{Adaptive Timer Manager} maintains the idle estimate and computes the effective threshold. The \emph{Power Controller} invokes the platform low-power transition and resumes the system on a new event. The framework does not alter the kernel scheduler or device drivers; the Power Controller is the only platform-specific boundary.
 
 \begin{figure}[t]
 \centering
 \begin{tikzpicture}[node distance=6mm, >=Latex, every node/.style={font=\footnotesize, align=center}]
 \node[draw, rounded corners, minimum width=0.88\columnwidth, minimum height=8mm] (apps) {Applications / Sensors / Network Events};
-\node[draw, rounded corners, below=of apps, minimum width=0.88\columnwidth, minimum height=11mm] (mon) {User Interaction Monitor\\event timestamps, context, idle history};
-\node[draw, rounded corners, below=of mon, minimum width=0.88\columnwidth, minimum height=11mm] (timer) {Adaptive Timer Manager\\threshold update $T_{new}=\lambda T_{old}+(1-\lambda)t_{idle}$};
-\node[draw, rounded corners, below=of timer, minimum width=0.88\columnwidth, minimum height=10mm] (power) {Power Controller\\suspend / resume through existing OS interfaces};
+\node[draw, rounded corners, below=of apps, minimum width=0.88\columnwidth, minimum height=11mm] (mon) {User Interaction Monitor\\event timestamps, context label};
+\node[draw, rounded corners, below=of mon, minimum width=0.88\columnwidth, minimum height=11mm] (timer) {Adaptive Timer Manager\\$\hat T\leftarrow\lambda\hat T+(1-\lambda)t_{idle}$, \ $T_{eff}=\mathrm{clip}(\rho_m\hat T,\,T_{min}^{(m)},\,T_{max})$};
+\node[draw, rounded corners, below=of timer, minimum width=0.88\columnwidth, minimum height=10mm] (power) {Power Controller\\suspend / resume through existing platform interfaces};
 \node[draw, rounded corners, below=of power, minimum width=0.88\columnwidth, minimum height=8mm] (hw) {Mobile / IoT Hardware};
 \draw[->] (apps) -- (mon);
 \draw[->] (mon) -- (timer);
@@ -128,149 +125,186 @@ Fig.~\ref{fig:arch} shows the architecture. The \emph{User Interaction Monitor} 
 \label{fig:arch}
 \end{figure}
 
-The framework does not alter the kernel scheduler or device drivers. Instead, it observes activity in user space and uses existing power-management interfaces. This separation minimizes integration effort and allows the same control logic to be reused across different processor architectures.
-
-\subsection{Adaptive Timer Update}
-Let $T$ denote the current idle threshold. When no activity occurs for $T$, the device enters a low-power state. When the next event occurs, the framework records the observed idle interval $t_{idle}$ and updates the threshold as
+\subsection{Break-Even Time and Threshold Bounds}
+Let $P_{i}$ and $P_{s}$ denote the platform power in the idle-wait and low-power states, and let $E_{tr}$ and $\tau_{tr}$ denote the total energy and time of one entry--exit transition. Following the standard DPM analysis~\cite{benini2000survey}, suspending is profitable only for idle periods longer than
 \begin{equation}
-T_{new}=\lambda T_{old}+(1-\lambda)t_{idle},
+T_{be}=\max\!\left(\tau_{tr},\ \frac{E_{tr}-P_{s}\tau_{tr}}{P_{i}-P_{s}}\right).
+\label{eq:breakeven}
+\end{equation}
+$T_{be}$ is a platform property that can be measured once per device and low-power state. UATimer constrains its effective threshold to
+\begin{equation}
+T_{min}^{(m)} \le T_{eff} \le T_{max},\qquad T_{min}^{(m)}\ge T_{be},
+\label{eq:bounds}
+\end{equation}
+where the lower bound may depend on the operating mode $m$ (Section~III-D) and $T_{max}$ limits idle energy waste. The floor ensures that the policy never arms a threshold that would make every resulting transition unprofitable, which a pure history estimate could otherwise do when events are very frequent.
+
+\subsection{Adaptive Idle Estimate}
+When the next event occurs after an idle period, the monitor records the observed interval $t_{idle}$ between consecutive events and updates the estimate
+\begin{equation}
+\hat T_{new}=\lambda \hat T_{old}+(1-\lambda)t_{idle},
 \label{eq:update}
 \end{equation}
-where $0\leq\lambda<1$ is the temporal smoothing coefficient. A larger $\lambda$ produces slower changes and favors stability, whereas a smaller value responds more rapidly to recent observations.
+where $0\leq\lambda<1$ is the temporal smoothing coefficient. This is the exponential-average predictor of~\cite{hwang2000predictive}; UATimer uses it as the adaptive center of the threshold rather than as a shutdown oracle. When the device was suspended, $t_{idle}$ includes the resume latency, which biases $\hat T$ upward by at most $\tau_{tr}$.
 
-The update can be implemented with only a few scalar variables. In contrast with a predictor that estimates a complete next-state distribution, the timer maintains a smoothed representation of recent idle behavior.
+For a stationary sequence with constant idle interval $t^*$, repeated application gives $\hat T_k-t^*=\lambda^k(\hat T_0-t^*)$, so the estimate converges geometrically. More generally,
+\begin{equation}
+\hat T_k=\lambda^k\hat T_0+(1-\lambda)\sum_{i=0}^{k-1}\lambda^i t_{k-i},
+\label{eq:ewma}
+\end{equation}
+so recent observations dominate, and $\lambda$ sets how many events are needed to follow a workload shift. After a step change in the idle interval, the residual error decays by a factor of $1/e$ after approximately $-1/\ln\lambda$ events.
 
-\subsection{Context-Aware Extension}
-Observed idle duration alone cannot fully represent application requirements. The framework therefore permits context to modify the energy--responsiveness preference, consistent with context-aware mobile scheduling and QoS-aware power-management designs~\cite{lee2017cas,sang2024qos}. For example, an AR/VR application can increase the weight placed on delay, while night-time sensing can increase the emphasis on energy conservation.
-
-We formalize this trade-off through
+\subsection{Context-Selected Operating Modes}
+Observed idle duration alone cannot represent application requirements~\cite{lee2017cas,sang2024qos}. We express the energy--responsiveness preference through
 \begin{equation}
 J(T)=w_E E(T)+w_D D(T),
 \label{eq:cost}
 \end{equation}
-where $E(T)$ denotes energy consumption and $D(T)$ denotes average response delay under threshold $T$. The coefficients $w_E$ and $w_D$ reflect the active policy objective and are distinct from the temporal smoothing coefficient $\lambda$. Table~\ref{tab:weights} shows representative settings used to explain three operating modes.
+where $E(T)$ is the energy and $D(T)$ the mean response delay under threshold $T$, and $w_E,w_D\ge 0$ are policy weights distinct from $\lambda$. Both terms are normalized by their values under the platform baseline so that the weights are dimensionless. UATimer does not minimize $J$ online, because $E(T)$ and $D(T)$ are not known in closed form at run time. Instead, the objective determines the \emph{direction} in which context should move the threshold.
+
+\begin{proposition}
+\label{prop:monotone}
+If $D(T)$ is nonincreasing in $T$, the set of minimizers of $J(T)$ is nondecreasing in the ratio $r=w_D/w_E$ in the strong set order.
+\end{proposition}
+\begin{IEEEproof}
+Write $\tilde J(T;r)=E(T)+rD(T)$, which has the same minimizers as $J$. For $T'>T$ and $r'>r$,
+$[\tilde J(T';r')-\tilde J(T;r')]-[\tilde J(T';r)-\tilde J(T;r)]=(r'-r)\,(D(T')-D(T))\le 0$.
+Hence $\tilde J$ has decreasing differences in $(T,r)$, and the claim follows from Topkis' monotonicity theorem.
+\end{IEEEproof}
+
+A longer threshold means fewer suspensions and therefore fewer wake-up penalties, so the assumption on $D$ holds for the timeout policies considered here. Proposition~\ref{prop:monotone} states that a mode that weights delay more heavily should never select a \emph{shorter} threshold than a mode that weights energy more heavily. UATimer implements this ordering with three fixed modes (Table~\ref{tab:weights}) and a mode-dependent scale
+\begin{align}
+T_{eff}&=\min\!\big(T_{max},\ \max\big(T_{min}^{(m)},\ \rho_m\hat T\big)\big), \label{eq:teff}\\
+\rho_m&=1+\alpha\,\big(w_D^{(m)}-w_E^{(m)}\big), \label{eq:rho}
+\end{align}
+with $0\le\alpha<1$, so that $\rho_m>0$ and $\rho_m$ increases with $w_D^{(m)}$. The weights are looked up per mode rather than incremented per event, so they remain in $[0,1]$ and sum to one. In addition, the latency-critical mode may set an \emph{inhibit} flag while the application reports an active interactive session, which suppresses suspension regardless of $\hat T$. The floor in Eq.~\eqref{eq:bounds} and the inhibit flag address a failure mode of pure history tracking: under 60-Hz rendering, inter-event intervals of about 16.7~ms would otherwise drive $\hat T$ toward the frame period and produce the most aggressive suspension exactly when it is least acceptable.
 
 \begin{table}[t]
-\caption{Representative Energy--Delay Weight Settings}
+\caption{Operating Modes and Energy--Delay Weights}
 \label{tab:weights}
 \centering
-\begin{tabular}{ccc}
+\begin{tabular}{cccl}
 \toprule
-$w_E$ & $w_D$ & Priority mode \\
+$w_E$ & $w_D$ & $\rho_m$ & Priority mode \\
 \midrule
-0.8 & 0.2 & Energy-conservative \\
-0.5 & 0.5 & Balanced \\
-0.2 & 0.8 & Latency-critical \\
+0.8 & 0.2 & $1-0.6\alpha$ & Energy-conservative \\
+0.5 & 0.5 & $1$ & Balanced \\
+0.2 & 0.8 & $1+0.6\alpha$ & Latency-critical \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The weighting mechanism is intentionally simple. It provides a way to react to coarse application context without requiring a learned policy.
+The context label is produced by a rule table keyed on the application class of the foreground or registering application and on an optional time-of-day window. Examples are AR/VR$\rightarrow$latency-critical and night-time sensing$\rightarrow$energy-conservative \authorcheck{confirm rule table and mode assigned to each evaluated workload}. The mechanism is deliberately coarse; it trades the ability to learn latent context for a mapping that a developer can audit.
 
-\subsection{Algorithm}
-Algorithm~\ref{alg:concept} summarizes the control flow in compact form.
+\subsection{Algorithm and Event Semantics}
+Algorithm~\ref{alg:uatimer} gives the control flow. After an event is serviced, the system enters the idle-wait state and arms a one-shot timer at $T_{eff}$. A new event arriving before expiry cancels the timer and produces a new idle observation. If the timer expires, the Power Controller requests a low-power state, and the next eligible user, sensor, or network event resumes the device and closes the current idle sample. The policy is therefore event-driven: it performs no polling, and each event costs a constant number of scalar operations. This formulation separates \emph{policy} (how $T_{eff}$ is selected) from \emph{mechanism} (how the platform enters or exits low power).
 
-\begin{figure}[t]
+\begin{algorithm}[t]
+\caption{UATimer event-driven control}
+\label{alg:uatimer}
 \small
-\begin{verbatim}
-on_event():
-    now  = now_ms()
-    idle = now - last_event
-    last_event = now
+\begin{algorithmic}[1]
+\Require $\lambda$, $\alpha$, $T_{max}$, per-mode $(w_E^{(m)},w_D^{(m)},T_{min}^{(m)})$
+\State $\hat T\gets \hat T_0$;\ $t_{last}\gets \mathrm{now}()$;\ $m\gets$ Balanced
+\Procedure{OnEvent}{}
+  \State $t\gets\mathrm{now}()$;\ $t_{idle}\gets t-t_{last}$;\ $t_{last}\gets t$
+  \State $\hat T\gets\lambda\hat T+(1-\lambda)\,t_{idle}$ \Comment{Eq.~\eqref{eq:update}}
+  \State \Call{Rearm}{}
+\EndProcedure
+\Procedure{OnContextChange}{$c$}
+  \State $m\gets\mathrm{Mode}(c)$ \Comment{rule-table lookup}
+  \State \Call{Rearm}{}
+\EndProcedure
+\Procedure{Rearm}{}
+  \State $\rho\gets 1+\alpha\,(w_D^{(m)}-w_E^{(m)})$
+  \State $T_{eff}\gets\min(T_{max},\max(T_{min}^{(m)},\rho\hat T))$ \Comment{Eq.~\eqref{eq:teff}}
+  \If{$\mathrm{inhibit}(m)$} \State cancel timer
+  \Else \State arm one-shot timer at $t_{last}+T_{eff}$
+  \EndIf
+\EndProcedure
+\Procedure{OnTimerExpiry}{}
+  \If{no pending work \textbf{and not} $\mathrm{inhibit}(m)$} \State \Call{Suspend}{} \Comment{platform primitive}
+  \EndIf
+\EndProcedure
+\end{algorithmic}
+\end{algorithm}
 
-    if context == ARVR:
-        w_D += delta
-        w_E -= delta
-    else if context == NIGHT:
-        w_E += delta
-        w_D -= delta
+\subsection{Interaction With Periodic Workloads}
+Equation~\eqref{eq:teff} clarifies a property that a pure mean-tracking timeout would hide. For a strictly periodic event stream with period $P$, $\hat T\to P$. In the balanced mode ($\rho_m=1$), the timer then expires close to the next event, and few profitable suspensions occur. In the energy-conservative mode ($\rho_m<1$), the timer expires after $\rho_m P$ and the device sleeps for approximately $(1-\rho_m)P$ per period, which is profitable when $(1-\rho_m)P>T_{be}$. Periodic sensing workloads should therefore be assigned the energy-conservative mode, and the achievable saving grows with the gap between the sampling period and $T_{be}$.
 
-    T = lambda*T + (1-lambda)*idle
+\subsection{Parameterization}
+Configuration proceeds in two stages. The platform first measures $T_{be}$ and selects $T_{min}^{(m)}\ge T_{be}$ and $T_{max}$ from its wake-up characteristics. The application then supplies context, which selects the mode. Within those limits, Eq.~\eqref{eq:update} adapts continuously. Table~\ref{tab:params} lists the parameters and the values used in the experiments. None of them requires a learned model. If a future implementation introduces TinyML or statistical prediction, the predictor can replace $\hat T$ while retaining the same bounded interface.
 
-main_loop():
-    while true:
-        if idle_ms() >= T:
-            suspend()
-        if event_available():
-            resume_if_needed()
-            on_event()
-\end{verbatim}
-\caption{Conceptual pseudocode of the adaptive timer.}
-\label{alg:concept}
-\end{figure}
+\begin{table}[t]
+\caption{Policy Parameters Used in the Evaluation}
+\label{tab:params}
+\centering
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{p{0.16\columnwidth}p{0.42\columnwidth}p{0.30\columnwidth}}
+\toprule
+Symbol & Meaning & Value \\
+\midrule
+$\lambda$ & Temporal smoothing coefficient & \authorcheck{value} \\
+$\alpha$ & Mode scaling strength & \authorcheck{value} \\
+$\hat T_0$ & Initial idle estimate & \authorcheck{mobile / IoT} \\
+$T_{be}$ & Break-even time, Eq.~\eqref{eq:breakeven} & \authorcheck{per platform} \\
+$T_{min}^{(m)}$ & Mode-dependent floor & \authorcheck{per mode} \\
+$T_{max}$ & Upper bound & \authorcheck{mobile / IoT} \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-
-\subsection{State-Machine Interpretation and Event Semantics}
-The framework can also be viewed as a three-state controller with \emph{active}, \emph{idle-wait}, and \emph{low-power} states. After an event is serviced, the system enters the idle-wait state and arms the current threshold $T$. A new event arriving before expiry cancels the transition and produces a new idle observation. If the threshold expires, the Power Controller requests a low-power state. The next eligible user, sensor, or network event resumes the device and closes the current idle sample. This formulation separates \emph{policy} (how $T$ is selected) from \emph{mechanism} (how the platform enters or exits low power), which is useful for heterogeneous IoT systems whose suspend primitives differ across operating systems and microcontrollers.
-
-To avoid pathological behavior, a practical deployment can constrain the adaptive threshold to a platform-defined interval
-\begin{equation}
-T_{min} \le T \le T_{max},
-\label{eq:bounds}
-\end{equation}
-where $T_{min}$ protects latency-sensitive applications from excessively frequent transitions and $T_{max}$ limits idle energy waste. The implementation emphasizes lightweight adaptation rather than a learned transition policy; therefore, such bounds can be enforced with constant-time scalar operations and without changing the kernel interface.
-
-\subsection{Convergence and Responsiveness of the Update Rule}
-Equation~\eqref{eq:update} is an exponentially weighted update. For a stationary sequence with constant idle interval $t^*$, repeated application gives
-\begin{equation}
-T_k-t^*=\lambda^k(T_0-t^*),
-\label{eq:convergence}
-\end{equation}
-so the threshold approaches the observed idle interval geometrically whenever $0\le\lambda<1$. This simple property clarifies the role of $\lambda$: larger values suppress short-term variation but require more events to follow a workload shift, while smaller values react faster but track transient bursts more closely. The implementation therefore exposes a direct and interpretable responsiveness knob rather than hiding adaptation inside model parameters.
-
-For a non-stationary event stream, the same update can be interpreted as an exponentially weighted moving average of past idle intervals,
-\begin{equation}
-T_k=\lambda^kT_0+(1-\lambda)\sum_{i=0}^{k-1}\lambda^i t_{k-i},
-\label{eq:ewma}
-\end{equation}
-which gives recent observations greater influence. This interpretation is important for IoT deployments because bursty user interaction, periodic sensing, and long unattended periods can occur on the same device. Context-aware changes to the energy--delay weights operate orthogonally to this temporal smoothing: $\lambda$ controls how quickly the timer follows history, while $(w_E,w_D)$ expresses the current application priority.
-
-\subsection{Policy Complexity and Deployment Properties}
-Table~\ref{tab:policycompare} summarizes the qualitative differences among the evaluated policies. The comparison is based on the implemented mechanisms rather than on additional performance measurements. The fixed timeout has the smallest control logic but cannot adapt. The linear-regression baseline adds prediction state and an inference path. UATimer retains constant-size scalar state and an $O(1)$ update per event while adapting online and accepting context input.
+\subsection{Policy Complexity}
+Table~\ref{tab:policycompare} summarizes the qualitative differences among the evaluated policies, based on the implemented mechanisms rather than on additional measurements. The per-policy scalar state of UATimer ($\hat T$, $t_{last}$, the current mode, three weight pairs, and bounds) amounts to tens of bytes. The 1~KB bound also covers the context rule table.
 
 \begin{table}[t]
 \caption{Qualitative Policy Characteristics}
 \label{tab:policycompare}
 \centering
 \scriptsize
-\begin{tabular}{p{0.20\columnwidth}cccc}
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{p{0.21\columnwidth}cccc}
 \toprule
-Property & Baseline & Fixed & ML & UATimer \\
+Property & Baseline & Fixed & LR predictor & UATimer \\
 \midrule
-Online adaptation & -- & No & Yes & Yes \\
-Training required & -- & No & Yes & No \\
-Context hook & OS dep. & No & Optional & Yes \\
-Per-event update & OS dep. & $O(1)$ & inference & $O(1)$ \\
+Online adaptation & OS dep. & No & Inputs only$^{a}$ & Yes \\
+Training required & -- & No & Offline fit & No \\
+Context input & OS dep. & No & No & Yes \\
+Break-even floor & OS dep. & No & No & Yes \\
+Per-event cost & OS dep. & $O(1)$ & $O(1)$ inference & $O(1)$ \\
 Kernel change & No & No & No & No \\
-Policy state & OS dep. & scalar & coefficients & $<$1 KB \\
+Policy state & OS dep. & 1 scalar & 4 coeff. ($<$64 B) & $<$1 KB \\
 \bottomrule
+\multicolumn{5}{p{0.92\columnwidth}}{$^{a}$Predictions use recent idle intervals, but the coefficients are fixed after offline fitting.}
 \end{tabular}
 \end{table}
 
 \section{Implementation}
-\subsection{User-Space Integration}
-The implementation operates in user space and requires no kernel modification. On Android, the daemon registers PowerHAL-related callbacks to observe relevant activity and coordinate low-power transitions. On Linux, it uses \texttt{epoll}-based input hooks to detect events and a high-resolution timer to arm and disarm timeout decisions. Deployment changes are limited to user-space startup and manifest/init integration rather than kernel or driver patches.
+\subsection{Platform Integration}
+The policy logic (Algorithm~\ref{alg:uatimer}) is written once and linked against a small platform adaptation layer that provides event notification, a one-shot timer, and the suspend primitive. On Android, a user-space daemon registers PowerHAL-related callbacks to observe relevant activity and coordinate low-power transitions. On Linux, it uses \texttt{epoll}-based input hooks to detect events and a high-resolution timer to arm and disarm the threshold. On these platforms, deployment changes are limited to user-space startup and manifest/init integration rather than kernel or driver patches.
 
-The implementation size is below 500 lines of code, and the persistent policy state is below 1~KB. These properties are important for embedded deployment because they reduce the maintenance burden and avoid a model-management pipeline.
+The Cortex-M4 IoT node has no user/kernel separation. There, the same policy code is compiled into the firmware as an application-level module that is invoked from the firmware event loop, and \textproc{Suspend} maps to the MCU's low-power mode \authorcheck{name RTOS or bare-metal environment, sleep mode, and wake sources}. The ``no kernel modification'' property therefore applies to the Linux and Android platforms. On the node, the corresponding property is that the vendor power-management code is not changed.
+
+The implementation is below 500 lines of code, and the persistent policy state is below 1~KB. These properties reduce the maintenance burden and avoid a model-management pipeline.
 
 \subsection{Cross-Architecture Portability}
-The control logic depends on timer APIs and user-space event hooks rather than processor-specific instructions. The implementation was evaluated primarily on ARM-based mobile platforms and additionally exercised on an Intel x86 Linux laptop and an ESP32-class RISC-V IoT board. This provides a portability check, not a full cross-architecture performance evaluation. It indicates that the control logic can be transferred when equivalent event and suspend/resume interfaces are available; the present dataset does not contain energy or latency measurements for the additional x86 and RISC-V systems.
+The control logic depends on timer and event interfaces rather than processor-specific instructions. Besides the three evaluated platforms, the policy module was additionally exercised on an Intel x86 Linux laptop and an ESP32-class RISC-V board \authorcheck{state what was run on the RISC-V board: firmware build, functional test, or trace replay}. This is a portability check, not a cross-architecture performance evaluation; the present dataset contains no energy or latency measurements for these two systems.
 
-\subsection{Lightweight ML Baseline}
-For comparison, a linear-regression scheduler predicts the next idle interval from the previous three idle intervals and a bias term. The model is trained by least squares on $10^3$ samples and stores four scalar coefficients, requiring less than 64~B of model state. The reported per-event inference time is below 0.3~ms on a Cortex-A53 platform. This baseline was selected to represent a deliberately lightweight learning approach rather than a state-of-the-art neural or TinyML predictor. Consequently, the comparison supports only the claim that UATimer reaches a similar operating point to this specific predictor with simpler policy state; it must not be interpreted as a general comparison against learning-based power management.
+\subsection{Lightweight Learning Baseline}
+For comparison, a linear-regression (LR) scheduler predicts the next idle interval from the previous three idle intervals and a bias term. The model is fitted offline by least squares on $10^3$ idle-interval samples \authorcheck{state the workload(s) the samples came from and whether one model was fitted per workload} and stores four scalar coefficients, i.e., less than 64~B of model state. The reported per-event inference time is below 0.3~ms on a Cortex-A53 platform. This baseline represents a deliberately lightweight learning approach and belongs to the same family of linear idle predictors as~\cite{srivastava1996predictive}. It is not a state-of-the-art neural or TinyML predictor, so the comparison supports only the claim that UATimer reaches a similar operating point to this specific predictor without offline fitting.
 
 \section{Experimental Methodology}
-\subsection{Platforms}
+\subsection{Platforms and Measurement}
 The evaluation covers three representative device classes:
 \begin{itemize}
-    \item an Android smartphone based on a Qualcomm Snapdragon platform with a 4000~mAh battery,
-    \item a tablet based on an ARM Cortex-A73 platform with a 6000~mAh battery, and
-    \item a Cortex-M4 IoT sensor node powered by a coin-cell battery.
+    \item an Android smartphone based on a Qualcomm Snapdragon platform with a 4000~mAh battery \authorcheck{SoC model, Android and kernel versions},
+    \item a tablet based on an ARM Cortex-A73 platform with a 6000~mAh battery \authorcheck{SoC model, OS version}, and
+    \item a Cortex-M4 IoT sensor node powered by a coin-cell battery \authorcheck{MCU model, radio}.
 \end{itemize}
-Energy on the mobile devices was measured using a Monsoon power monitor, while an external meter was used for the IoT node. Event latency was obtained from timestamp logging. Wi-Fi was enabled and display brightness was fixed at 50\% for the mobile-device experiments.
+Energy on the mobile devices was measured using a Monsoon power monitor, and an external meter was used for the IoT node \authorcheck{meter model and sampling rate}. Energy is integrated over a fixed measurement window per run \authorcheck{window length per workload}. Event latency was obtained from timestamp logging as the time from event arrival to the start of its handling. Wi-Fi was enabled and display brightness was fixed at 50\% for the mobile-device experiments.
 
 \subsection{Workloads}
-Five workload classes were used:
+Five workload classes were used \authorcheck{state which device each workload ran on}:
 \begin{itemize}
     \item \textbf{Web browsing:} intermittent touch input mixed with background network activity;
     \item \textbf{Video playback:} continuous decoding with relatively little user input;
@@ -278,24 +312,24 @@ Five workload classes were used:
     \item \textbf{AR/VR gaming:} 60-Hz rendering with frequent sensor and interaction events; and
     \item \textbf{IoT sensing:} periodic sensor sampling and wireless transmission.
 \end{itemize}
+For the video and AI workloads, the low-power transitions managed by UATimer are those available while the main pipeline continues to run \authorcheck{specify the managed state: e.g., display, radio, peripheral runtime PM, or system suspend between inference batches}. System-wide suspend during active decoding is not implied.
 
 \subsection{Compared Policies}
 Four policies were compared:
 \begin{enumerate}
-    \item \textbf{Baseline:} default OS behavior without additional timeout tuning;
-    \item \textbf{Fixed timeout:} a static timeout representative of conventional idle policies;
-    \item \textbf{ML scheduler:} the lightweight linear-regression predictor described above; and
-    \item \textbf{Adaptive timer:} the proposed user-aware context-enhanced policy.
+    \item \textbf{Baseline:} default platform behavior without additional timeout tuning \authorcheck{define: e.g., stock Android idle/Doze settings; default firmware behavior on the node};
+    \item \textbf{Fixed timeout:} a static timeout of 3~s for mobile workloads and 5~s for the IoT workload;
+    \item \textbf{LR predictor:} the lightweight linear-regression scheduler described above; and
+    \item \textbf{UATimer:} the proposed policy with the parameters in Table~\ref{tab:params}.
 \end{enumerate}
-Unless otherwise noted, the fixed-timeout configuration used 3~s for mobile workloads and 5~s for the IoT workload. Each experiment was repeated five times, and Table~\ref{tab:results} reports the arithmetic means available from those measurements. Because the archived dataset used to prepare this manuscript does not include the per-run samples, this version does not report reconstructed standard deviations, confidence intervals, or significance tests. This limitation is stated explicitly in Section~VII.
-
+The fixed timeouts are representative settings and were not tuned to each platform's $T_{be}$; a break-even-tuned timeout~\cite{karlin1994competitive} would be a stronger static baseline. Each experiment was repeated five times, and Table~\ref{tab:results} reports the arithmetic means. The archived dataset used to prepare this manuscript does not include the per-run samples. For that reason, this version reports no standard deviations, confidence intervals, or significance tests, and it draws no conclusion from differences whose size is comparable to typical run-to-run variation.
 
 \section{Results}
 \subsection{Energy and Latency}
-Table~\ref{tab:results} summarizes the representative measurements. The proposed adaptive timer consistently reduces energy relative to the baseline while keeping average event delay below 50~ms.
+Table~\ref{tab:results} summarizes the measurements, and Table~\ref{tab:derived} reports reductions computed directly from them; these percentages are arithmetic transformations, not additional runs. Relative to the default baseline, UATimer reduces energy by 20.5--37.5\% (mean 27.7\% across the five workloads). Relative to the fixed-timeout policy, the reduction is 7.9--16.7\%. UATimer has the lowest mean energy in every workload, and its mean event delay remains below 50~ms throughout.
 
 \begin{table*}[t]
-\caption{Representative Evaluation Results Across Workloads}
+\caption{Evaluation Results Across Workloads (Means of Five Runs)}
 \label{tab:results}
 \centering
 \begin{tabular}{llrrrr}
@@ -304,96 +338,31 @@ Workload & Policy & Energy (mJ) & Delay (ms) & Frame drop (\%) & Jitter (ms) \\
 \midrule
 Web Browsing & Baseline & 1200 & 30 & -- & -- \\
  & Fixed timeout & 900 & 50 & -- & -- \\
- & ML scheduler & 780 & 47 & -- & -- \\
- & Adaptive & \textbf{750} & 45 & -- & -- \\
+ & LR predictor & 780 & 47 & -- & -- \\
+ & UATimer & \textbf{750} & 45 & -- & -- \\
 \midrule
 Video Playback & Baseline & 1800 & 25 & -- & -- \\
  & Fixed timeout & 1500 & 42 & -- & -- \\
- & ML scheduler & 1380 & 41 & -- & -- \\
- & Adaptive & \textbf{1350} & 40 & -- & -- \\
+ & LR predictor & 1380 & 41 & -- & -- \\
+ & UATimer & \textbf{1350} & 40 & -- & -- \\
 \midrule
 AI Inference & Baseline & 2200 & 28 & -- & -- \\
  & Fixed timeout & 1900 & 40 & -- & -- \\
- & ML scheduler & 1780 & 39 & -- & -- \\
- & Adaptive & \textbf{1750} & 38 & -- & -- \\
+ & LR predictor & 1780 & 39 & -- & -- \\
+ & UATimer & \textbf{1750} & 38 & -- & -- \\
 \midrule
 AR/VR Gaming & Baseline & 2500 & 20 & 2.5 & 3.0 \\
 (60 Hz) & Fixed timeout & 2100 & 30 & 3.2 & 3.5 \\
- & ML scheduler & 1850 & 29 & 1.8 & 2.7 \\
- & Adaptive & \textbf{1800} & 28 & \textbf{0.5} & \textbf{1.2} \\
+ & LR predictor & 1850 & 29 & 1.8 & 2.7 \\
+ & UATimer & \textbf{1800} & 28 & \textbf{0.5} & \textbf{1.2} \\
 \midrule
 IoT Sensing & Baseline & 400 & 12 & -- & -- \\
  & Fixed timeout & 320 & 18 & -- & -- \\
- & ML scheduler & 300 & 17 & -- & -- \\
- & Adaptive & \textbf{290} & 17 & -- & -- \\
+ & LR predictor & 300 & 17 & -- & -- \\
+ & UATimer & \textbf{290} & 17 & -- & -- \\
 \bottomrule
 \end{tabular}
 \end{table*}
-
-Across the five workload classes, direct calculation from Table~\ref{tab:results} gives baseline-relative energy reductions of 20.5--37.5\% (mean 27.3\% across the five listed workload means). Relative to the fixed-timeout policy, the reduction is 7.9--16.7\%. The gap between the adaptive and ML schedulers is small in absolute energy (1.7--3.8\% lower for UATimer in the listed measurements), so the result should be interpreted primarily as a complexity/deployability trade-off rather than a large performance advantage over prediction.
-
-\begin{figure}[t]
-\centering
-\begin{tikzpicture}
-\begin{axis}[
-    ybar,
-    width=\columnwidth,
-    height=5.2cm,
-    ylabel={Energy (mJ)},
-    symbolic x coords={Web,Video,AI,ARVR,IoT},
-    xtick=data,
-    x tick label style={font=\scriptsize},
-    ymajorgrids=true,
-    legend style={font=\scriptsize, at={(0.5,1.02)}, anchor=south, legend columns=2},
-    bar width=3.5pt
-]
-\addplot coordinates {(Web,1200) (Video,1800) (AI,2200) (ARVR,2500) (IoT,400)};
-\addplot coordinates {(Web,900) (Video,1500) (AI,1900) (ARVR,2100) (IoT,320)};
-\addplot coordinates {(Web,780) (Video,1380) (AI,1780) (ARVR,1850) (IoT,300)};
-\addplot coordinates {(Web,750) (Video,1350) (AI,1750) (ARVR,1800) (IoT,290)};
-\legend{Baseline,Fixed,ML,Adaptive}
-\end{axis}
-\end{tikzpicture}
-\caption{Energy consumption for the evaluated workloads.}
-\label{fig:energy}
-\end{figure}
-
-\begin{figure}[t]
-\centering
-\begin{tikzpicture}
-\begin{axis}[
-    ybar,
-    width=\columnwidth,
-    height=5.2cm,
-    ylabel={Average delay (ms)},
-    symbolic x coords={Web,Video,AI,ARVR,IoT},
-    xtick=data,
-    x tick label style={font=\scriptsize},
-    ymajorgrids=true,
-    legend style={font=\scriptsize, at={(0.5,1.02)}, anchor=south, legend columns=2},
-    bar width=3.5pt
-]
-\addplot coordinates {(Web,30) (Video,25) (AI,28) (ARVR,20) (IoT,12)};
-\addplot coordinates {(Web,50) (Video,42) (AI,40) (ARVR,30) (IoT,18)};
-\addplot coordinates {(Web,47) (Video,41) (AI,39) (ARVR,29) (IoT,17)};
-\addplot coordinates {(Web,45) (Video,40) (AI,38) (ARVR,28) (IoT,17)};
-\legend{Baseline,Fixed,ML,Adaptive}
-\end{axis}
-\end{tikzpicture}
-\caption{Average event latency for the evaluated workloads.}
-\label{fig:latency}
-\end{figure}
-
-\subsection{AR/VR Quality of Experience}
-The AR/VR workload illustrates the need to avoid overly aggressive energy saving. The fixed-timeout policy reduces energy but increases frame drops to 3.2\% and jitter to 3.5~ms. The adaptive policy reduces energy from 2500~mJ to 1800~mJ while reporting only 0.5\% frame drops and 1.2~ms jitter. These measurements indicate that context-dependent weighting can preserve interactive quality while still exploiting idle opportunities.
-
-
-\subsection{Comparison With the Lightweight ML Baseline}
-The adaptive timer slightly outperforms the linear-regression scheduler in the reported energy measurements while exhibiting similar latency. The main distinction is implementation complexity: the adaptive method requires only scalar state and a deterministic update rule, whereas the learning baseline requires a feature representation, trained coefficients, and inference logic. Although the chosen ML baseline is intentionally lightweight, the comparison demonstrates that a simple adaptive mechanism can capture much of the available benefit for the evaluated workloads.
-
-
-\subsection{Workload-Level Energy Reduction Derived From the Measurements}
-To make the workload dependence more explicit, Table~\ref{tab:derived} reports reductions computed directly from the energy values in Table~\ref{tab:results}. These percentages are arithmetic transformations of the reported measurements and do not represent additional experimental runs. Relative to the default baseline, the computed reduction is 20.5--37.5\%; relative to the fixed-timeout policy, UATimer reduces measured energy by approximately 7.9--16.7\% across the five workloads. Relative to the lightweight ML scheduler, the additional reduction is smaller, approximately 1.7--3.8\%, which supports the observation that a low-complexity adaptive rule captures much of the benefit available to the selected predictor.
 
 \begin{table}[t]
 \caption{Energy Reduction Computed From Table~\ref{tab:results}}
@@ -401,7 +370,7 @@ To make the workload dependence more explicit, Table~\ref{tab:derived} reports r
 \centering
 \begin{tabular}{lrrr}
 \toprule
-Workload & vs. Baseline & vs. Fixed & vs. ML \\
+Workload & vs. Baseline & vs. Fixed & vs. LR \\
  & (\%) & (\%) & (\%) \\
 \midrule
 Web browsing & 37.5 & 16.7 & 3.8 \\
@@ -409,67 +378,108 @@ Video playback & 25.0 & 10.0 & 2.2 \\
 AI inference & 20.5 & 7.9 & 1.7 \\
 AR/VR gaming & 28.0 & 14.3 & 2.7 \\
 IoT sensing & 27.5 & 9.4 & 3.3 \\
+\midrule
+Mean & 27.7 & 11.6 & 2.7 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The absolute measurements also show that the benefit is not tied to a single workload class. The adaptive policy has the lowest reported energy value in every row group of Table~\ref{tab:results}. At the same time, its latency remains close to that of the ML scheduler, and in the AR/VR case the frame-drop and jitter values are lower than those of the other evaluated policies. Because the experiment reports only five repetitions per condition and per-run samples are not available in the archived dataset, these workload-level comparisons should be interpreted as representative mean differences rather than universal effect sizes.
+Fig.~\ref{fig:tradeoff} plots each policy as a point in the energy--delay plane, with energy normalized to the baseline of the same workload. Power management is a multi-objective problem. The baseline has the lowest delay and the highest energy, and the fixed timeout reduces energy at the largest delay cost. UATimer lies on the lower-left side of the fixed-timeout and LR points for every workload. Relative to the baseline, however, UATimer increases mean delay by 5--15~ms (up to 50\% for web browsing and 60\% for video playback). The appropriate claim is therefore an improved energy--delay trade-off, not unchanged responsiveness.
 
-\subsection{Energy--Latency Operating Point}
-The measurements illustrate why power management should be treated as a multi-objective problem. The baseline generally has the lowest event delay but consumes more energy, while fixed timeouts reduce energy at the cost of larger delay. UATimer occupies an intermediate operating point: it gives up some baseline responsiveness to gain energy efficiency, but its observed delay remains below 50~ms for all evaluated workloads. For IoT deployments, this operating point can be shifted by changing context weights rather than replacing the control mechanism.
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+    width=\columnwidth,
+    height=6cm,
+    xlabel={Mean event delay (ms)},
+    ylabel={Energy / baseline energy},
+    xmin=8, xmax=54, ymin=0.58, ymax=1.04,
+    grid=major,
+    grid style={gray!25},
+    tick label style={font=\scriptsize},
+    label style={font=\small},
+    legend style={font=\scriptsize, at={(0.5,1.02)}, anchor=south, legend columns=4},
+]
+\addplot[gray!60, forget plot] coordinates {(30,1) (50,0.750) (47,0.650) (45,0.625)};
+\addplot[gray!60, forget plot] coordinates {(25,1) (42,0.833) (41,0.767) (40,0.750)};
+\addplot[gray!60, forget plot] coordinates {(28,1) (40,0.864) (39,0.809) (38,0.795)};
+\addplot[gray!60, forget plot] coordinates {(20,1) (30,0.840) (29,0.740) (28,0.720)};
+\addplot[gray!60, forget plot] coordinates {(12,1) (18,0.800) (17,0.750) (17,0.725)};
+\addplot[only marks, mark=square*, black] coordinates {(30,1) (25,1) (28,1) (20,1) (12,1)};
+\addplot[only marks, mark=triangle*, orange!80!black, mark size=2.8pt] coordinates {(50,0.750) (42,0.833) (40,0.864) (30,0.840) (18,0.800)};
+\addplot[only marks, mark=diamond*, blue!70!black, mark size=2.8pt] coordinates {(47,0.650) (41,0.767) (39,0.809) (29,0.740) (17,0.750)};
+\addplot[only marks, mark=*, red!75!black] coordinates {(45,0.625) (40,0.750) (38,0.795) (28,0.720) (17,0.725)};
+\legend{Baseline,Fixed,LR,UATimer}
+\node[font=\scriptsize, anchor=north] at (axis cs:45,0.615) {Web};
+\node[font=\scriptsize, anchor=west] at (axis cs:40.8,0.740) {Video};
+\node[font=\scriptsize, anchor=east] at (axis cs:37.2,0.795) {AI};
+\node[font=\scriptsize, anchor=north] at (axis cs:28,0.710) {AR/VR};
+\node[font=\scriptsize, anchor=north] at (axis cs:17,0.715) {IoT};
+\end{axis}
+\end{tikzpicture}
+\caption{Energy--delay operating points per workload (energy normalized to the baseline of the same workload; lines connect the policies of one workload). Lower-left is better.}
+\label{fig:tradeoff}
+\end{figure}
 
-The AR/VR case is particularly informative. A purely energy-oriented policy can enter low-power states at times that disturb a 60-Hz rendering pipeline. By assigning greater weight to delay in latency-critical context, the timer can remain conservative while the application is active and become more aggressive when the context changes. Conversely, periodic sensing can tolerate longer thresholds and place more weight on energy conservation. The same runtime therefore supports heterogeneous device roles without maintaining a separate predictor for each workload class.
+\subsection{AR/VR Rendering Quality}
+The AR/VR workload shows why aggressive energy saving must be bounded. The fixed-timeout policy reduces energy but increases frame drops from 2.5\% to 3.2\% and jitter from 3.0~ms to 3.5~ms. With the latency-critical mode, UATimer reduces energy from 2500~mJ to 1800~mJ while reporting 0.5\% frame drops and 1.2~ms jitter. The comparison with the fixed timeout is consistent with the mechanism: the mode floor and inhibit flag avoid transitions during active rendering, which a fixed 3~s timeout cannot distinguish.
 
-\subsection{Failure Modes and Safe Integration}
-A deployable timer policy must account for cases in which suspending is undesirable even if the observed idle interval is long. Examples include non-deferrable background operations, protocol-critical communication windows, or device-specific transitions whose wake cost is high. The architecture addresses this at the integration boundary: platform or application context can inhibit a transition, select a latency-critical mode, or constrain $T$ through Eq.~\eqref{eq:bounds}. In this sense, UATimer is designed as a policy layer that complements rather than replaces existing platform safety and power-management controls.
+UATimer also reports lower frame drops and jitter than the baseline, which performs no additional suspension. The timeout mechanism alone does not explain this observation. Candidate explanations, such as reduced thermal throttling from lower average power or changed background scheduling, were not measured. We therefore claim only that the latency-critical mode did not degrade rendering quality relative to the other policies, not that it improves rendering quality. The mean event delay of 28~ms, which exceeds the 16.7~ms frame period, refers to input and sensor events handled by the policy monitor rather than to frame presentation latency.
 
-The user-space placement also limits the failure domain. If the daemon is disabled or cannot obtain the required event hooks, the underlying OS policy remains available. This property is useful during staged deployment because the adaptive component can be enabled per product or workload without introducing an ISA-specific kernel patch. The trade-off is that user-space observation may not expose every device-level event; deeper component coordination would require additional platform interfaces.
-
-\subsection{Validity Considerations}
-Three considerations bound the interpretation of the present evaluation. \emph{Internal validity} depends on stable measurement conditions; Wi-Fi state and display brightness were fixed and each experiment was repeated five times, but uncontrolled background activity can still affect mobile energy measurements. \emph{Construct validity} is limited by the chosen metrics: total energy and average event latency capture the primary trade-off, while component-level residency, tail latency, and battery-lifetime projections are not reported. \emph{External validity} is limited by the three principal evaluation platforms, even though the user-space daemon was additionally exercised on x86 Linux and an ESP32-class RISC-V board. These considerations motivate broader measurements but do not change the reported means.
-
-
-\subsection{Evidence Boundaries and Claims Supported by the Present Data}
-The available measurements support four bounded conclusions. First, the adaptive policy has the lowest listed energy mean among the four evaluated policies for each of the five workloads. Second, average event delay for the adaptive policy remains below 50~ms in all listed workloads. Third, the reported AR/VR measurements show lower frame-drop and jitter values for the adaptive policy than for the three comparison policies. Fourth, the implementation is described as a small user-space component without kernel modification. The present data do \emph{not} establish superiority over modern TinyML policies, statistical significance across a large sample, radio-specific IoT energy behavior, or general cross-architecture energy gains. We state these boundaries explicitly to keep the claims aligned with the available measurements.
+\subsection{Comparison With the Lightweight LR Predictor}
+UATimer's mean energy is 1.7--3.8\% below that of the LR predictor, with similar mean delay. Without per-run dispersion data, differences of this size cannot be distinguished from run-to-run variation. We therefore do not claim that UATimer outperforms the predictor. We claim that it reaches a comparable operating point without offline fitting, and that it adds context input and a break-even floor, which the predictor lacks. This is consistent with the shared estimator family: both policies are linear filters over recent idle intervals, so large differences in their idle predictions are not expected on these workloads.
 
 \section{Discussion}
-\subsection{Why the Method Helps}
-The main benefit of the framework is not the timer itself but the continual alignment of timeout duration with observed behavior. A fixed timeout assumes a stationary environment, while interactive systems are inherently non-stationary. Web activity alternates between bursts and pauses, sensing workloads can become sparse, and latency-sensitive applications can temporarily dominate the system. The exponential update in~\eqref{eq:update} allows the threshold to follow these changes without a separate prediction model.
+\subsection{Why the Method Helps and Workload Dependence}
+A fixed timeout assumes a stationary environment, whereas interactive systems are non-stationary. Web activity alternates between bursts and pauses, sensing workloads can become sparse, and latency-sensitive applications can temporarily dominate the system. Equation~\eqref{eq:update} lets the threshold follow these changes, and Eq.~\eqref{eq:teff} shifts it in the direction prescribed by Proposition~\ref{prop:monotone} when the context changes. The magnitude of the gain depends on the availability of idle intervals longer than $T_{be}$, which is consistent with prior observations that the energy impact of power-state decisions is highly workload- and interface-dependent~\cite{carroll2010power,michelinakis2021nbiot}. Web browsing contains many exploitable gaps, whereas the continuous pipelines of video decoding and AI inference provide fewer. Once the available gaps are captured, additional prediction complexity has limited room to improve total energy, which explains the narrow margin to the LR predictor.
 
-\subsection{Workload Dependence}
-The magnitude of the gain depends on the availability of idle intervals. Video playback creates a relatively continuous decode pipeline and therefore provides fewer opportunities for suspend/resume optimization. More generally, prior measurements show that the energy impact of power-state decisions is highly workload- and interface-dependent~\cite{carroll2010power,michelinakis2021nbiot}. In contrast, web browsing and periodic sensing contain more exploitable idle gaps. This explains why the margin between the ML and adaptive schemes is narrow in some workloads: once the available idle opportunities are captured, additional prediction complexity has limited room to improve total energy.
+\subsection{Failure Modes and Safe Integration}
+Suspending can be undesirable even after a long idle interval. Examples include non-deferrable background operations, protocol-critical communication windows, and device-specific transitions with high wake cost. The architecture handles these cases at the integration boundary: platform or application context can inhibit a transition, select the latency-critical mode, or tighten the bounds in Eq.~\eqref{eq:bounds}. UATimer is thus a policy layer that complements existing platform safety and power-management controls. On Linux and Android, the user-space placement also limits the failure domain. If the daemon is disabled or cannot obtain its event hooks, the underlying OS policy remains in effect, so the adaptive component can be enabled per product or workload. The trade-off is that user-space observation may not expose every device-level event.
 
-\subsection{Practical Deployment}
-A key property is that deployment does not require kernel patches. In production environments, kernel modifications can increase validation cost and complicate updates across device variants. A user-space approach can be deployed selectively, disabled when necessary, and updated independently of low-level drivers. The resulting design is therefore suitable for experimental integration in mobile-edge and IoT products where maintainability is as important as algorithmic efficiency.
+\subsection{Threats to Validity}
+\emph{Internal validity} depends on stable measurement conditions. Wi-Fi state and display brightness were fixed, and each experiment was repeated five times, but uncontrolled background activity can still affect mobile energy measurements, and per-run dispersion is not available. \emph{Construct validity} is limited by the chosen metrics. Total energy and mean event delay capture the primary trade-off, but tail latency, the number of suspend/resume transitions, state residency, the overhead of the policy daemon itself, and battery-lifetime projections are not reported. \emph{External validity} is limited by the three evaluated platforms, of which only one is an IoT node, and by the absence of radio-specific experiments.
 
-\subsection{Limitations}
-The current evaluation has several limitations. First, the device set is representative rather than exhaustive, and only one principal IoT sensing platform contributes quantitative results. Second, the learning comparison uses a simple linear-regression model; stronger TinyML predictors would provide a more demanding baseline. Third, the present results focus on device-level energy and event latency and do not provide a component-level breakdown across CPU, GPU, radio, display, and memory. Fourth, only five repetitions were performed per condition, and the archived dataset available for this manuscript does not include per-run samples for retrospective uncertainty analysis. Finally, the context policy is rule-based and depends on manually defined application classes.
+\subsection{Limitations and Evidence Boundaries}
+The present data support four conclusions. First, UATimer has the lowest mean energy of the four evaluated policies in each of the five workloads. Second, its mean event delay remains below 50~ms, although it is 5--15~ms higher than the baseline. Third, in the AR/VR workload its frame-drop and jitter values are not worse than those of the comparison policies. Fourth, the policy is a small component that requires no kernel modification on Linux and Android.
 
-These limitations identify the highest-priority validation work for a subsequent experimental revision: evaluation on additional MCU and RISC-V boards, radio-specific experiments, battery-lifetime measurements, stronger TinyML baselines, component-level energy accounting, and a larger number of independent repetitions. Such extensions would strengthen generality without changing the core design.
+The data do \emph{not} establish statistical significance, superiority over the LR predictor or over modern TinyML and reinforcement-learning policies, radio-specific IoT energy behavior, battery-lifetime gains, or cross-architecture energy gains. The context rules are manually defined, the fixed-timeout baseline was not tuned to $T_{be}$, the overhead of the policy itself was not measured, and the lower AR/VR frame-drop rate relative to the baseline remains unexplained. The highest-priority follow-up measurements are therefore:
+(i) at least ten independent repetitions per condition with dispersion and significance tests;
+(ii) ablations separating Eq.~\eqref{eq:update}, the mode scaling, and the floor, together with sensitivity to $\lambda$ and $\alpha$;
+(iii) break-even-tuned timeout, Linux \texttt{cpuidle}, and TinyML baselines;
+(iv) additional MCU platforms with BLE, LoRa, or NB-IoT radios and battery-lifetime estimates; and
+(v) tail latency, transition counts, and policy overhead.
 
 \subsection{Reproducibility}
-The implementation and evaluation scripts will be archived with the project repository at \url{https://github.com/leemgs/uatimer}. Reproducibility is particularly important for lightweight power-management mechanisms because small changes in timeout parameters, device state, and workload timing can affect measured energy savings.
+A reference implementation of the policy core (Algorithm~\ref{alg:uatimer} and Eqs.~\eqref{eq:update},~\eqref{eq:teff},~\eqref{eq:rho}), the Linux \texttt{epoll}/\texttt{timerfd} adaptation layer, the linear-regression baseline of Section~IV-C, unit tests for the stated properties, and a trace-driven functional harness are archived at \url{https://github.com/leemgs/uatimer}. The harness exercises the control logic on event traces and reports transition behavior; it does not model device power and does not reproduce the measured energy values. The per-platform tuned parameters, the recorded workload traces, and the raw per-run energy samples \authorcheck{add the measured parameters, event traces, and measurement scripts to the repository before submission}. Reproducibility is particularly important for lightweight power-management mechanisms, because small changes in timeout parameters, device state, and workload timing can change the measured savings.
 
 \section{Conclusion}
-This paper presented a user-aware adaptive timer framework for energy-efficient and responsive power management in heterogeneous IoT and mobile-edge systems. The framework dynamically updates the idle threshold from observed activity, uses lightweight context to shift energy--latency priorities, and operates entirely in user space without kernel modification. The implementation requires fewer than 500 lines of code and less than 1~KB of state. Across the reported browsing, video, AI, AR/VR, and sensing measurements, the adaptive mechanism reduces energy by 20.5--37.5\% relative to the default baseline and 7.9--16.7\% relative to the fixed-timeout policy while maintaining average event latency below 50~ms. It also reports favorable AR/VR quality indicators and energy values close to the deliberately lightweight linear-regression baseline, with simpler policy state. These characteristics make the design a practical middle ground between static timeout policies and heavier predictive schedulers for resource-constrained and interactive IoT platforms.
-
-Future work will evaluate larger device populations, additional wireless protocols and edge workloads, stronger TinyML baselines, component-level energy behavior, and more independent repetitions. Another direction is joint management of CPU, GPU, display, and radio power states while preserving the same low-overhead user-space design principle.
+This paper presented UATimer, a user-aware adaptive timer for energy-efficient and responsive power management in heterogeneous IoT and mobile-edge systems. UATimer reuses the classical exponential-average idle estimator and bounds it below by the platform break-even time. It shifts the threshold through context-selected modes whose ordering follows from the energy--delay objective, and it separates this policy from the platform suspend mechanism so that the same code runs in user space on Linux and Android and in firmware on a microcontroller. The implementation requires fewer than 500 lines of code and less than 1~KB of state. Across the reported browsing, video, AI, AR/VR, and sensing measurements, UATimer reduces mean energy by 20.5--37.5\% relative to the default baseline and by 7.9--16.7\% relative to a fixed timeout, keeps mean event latency below 50~ms, and reaches energy values comparable to a lightweight LR predictor without offline fitting. Future work will address the measurements listed in Section~VII-D and extend the policy to the joint management of CPU, GPU, display, and radio states.
 
 \section*{Acknowledgment}
-OpenAI ChatGPT was used to assist with drafting and restructuring portions of the Introduction, Background, Discussion, and language throughout the manuscript. The author reviewed and edited the generated text and takes responsibility for the final content. The AI system was not used to generate, alter, or fabricate experimental measurements or reported results.
+OpenAI ChatGPT and Anthropic Claude were used to assist with drafting, restructuring, and revising portions of the Introduction, Background and Related Work, the formal description in Section~III, the Discussion, and language throughout the manuscript. The author reviewed and edited the generated text and takes responsibility for the final content. The AI systems were not used to generate, alter, or fabricate experimental measurements or reported results.
 
 \balance
-\begin{thebibliography}{10}
-\bibitem{carroll2010power} A. Carroll and G. Heiser, ``An analysis of power consumption in a smartphone,'' in \emph{Proc. USENIX Annu. Tech. Conf. (USENIX ATC)}, 2010.
-\bibitem{kim2012diapause} Y. Kim and J. Kim, ``Personalized Diapause: Reducing radio energy consumption of smartphones by network-context aware dormancy predictions,'' in \emph{Proc. Workshop Power-Aware Computing and Systems (HotPower)}, 2012.
-\bibitem{pefkianakis2014idle} I. Pefkianakis, J. Chandrashekar, and H. Lundgren, ``User-driven idle energy save for 802.11x mobile devices,'' in \emph{Proc. IEEE Int. Conf. Mobile Ad Hoc Sensor Syst. (MASS)}, 2014, pp. 282--290, doi: 10.1109/MASS.2014.50.
-\bibitem{lee2017cas} J. Lee, K. Lee, E. Jeong, J. Jo, and N. B. Shroff, ``CAS: Context-aware background application scheduling in interactive mobile systems,'' \emph{IEEE J. Sel. Areas Commun.}, vol. 35, no. 5, pp. 1013--1029, May 2017, doi: 10.1109/JSAC.2017.2676918.
+\begin{thebibliography}{99}
+\bibitem{benini2000survey} L. Benini, A. Bogliolo, and G. De Micheli, ``A survey of design techniques for system-level dynamic power management,'' \emph{IEEE Trans. Very Large Scale Integr. (VLSI) Syst.}, vol. 8, no. 3, pp. 299--316, Jun. 2000.
+\bibitem{srivastava1996predictive} M. B. Srivastava, A. P. Chandrakasan, and R. W. Brodersen, ``Predictive system shutdown and other architectural techniques for energy efficient programmable computation,'' \emph{IEEE Trans. Very Large Scale Integr. (VLSI) Syst.}, vol. 4, no. 1, pp. 42--55, Mar. 1996.
+\bibitem{hwang2000predictive} C.-H. Hwang and A. C.-H. Wu, ``A predictive system shutdown method for energy saving of event-driven computation,'' \emph{ACM Trans. Des. Autom. Electron. Syst.}, vol. 5, no. 2, pp. 226--241, Apr. 2000.
+\bibitem{douglis1995adaptive} F. Douglis, P. Krishnan, and B. N. Bershad, ``Adaptive disk spin-down policies for mobile computers,'' in \emph{Proc. 2nd USENIX Symp. Mobile and Location-Independent Computing}, 1995.
+\bibitem{helmbold1996dynamic} D. P. Helmbold, D. D. E. Long, and B. Sherrod, ``A dynamic disk spin-down technique for mobile computing,'' in \emph{Proc. 2nd Annu. Int. Conf. Mobile Computing and Networking (MobiCom)}, 1996.
+\bibitem{simunic2001event} T. Simunic, L. Benini, P. Glynn, and G. De Micheli, ``Event-driven power management,'' \emph{IEEE Trans. Comput.-Aided Des. Integr. Circuits Syst.}, vol. 20, no. 7, pp. 840--857, Jul. 2001.
+\bibitem{pallipadi2007cpuidle} V. Pallipadi, S. Li, and A. Belay, ``cpuidle: Do nothing, efficiently,'' in \emph{Proc. Linux Symp.}, Ottawa, ON, Canada, 2007.
 \bibitem{michelinakis2021nbiot} F. Michelinakis, A. S. Al-Selwi, M. Capuzzo, A. Zanella, K. Mahmood, and A. Elmokashfi, ``Dissecting energy consumption of NB-IoT devices empirically,'' \emph{IEEE Internet Things J.}, vol. 8, no. 2, pp. 1224--1242, Jan. 2021, doi: 10.1109/JIOT.2020.3013949.
 \bibitem{eaps2022} J. Sheth, C. Miremadi, A. Dezfouli, and B. Dezfouli, ``EAPS: Edge-assisted predictive sleep scheduling for 802.11 IoT stations,'' \emph{IEEE Syst. J.}, vol. 16, no. 1, pp. 591--602, Mar. 2022, doi: 10.1109/JSYST.2021.3063922.
-\bibitem{safaei2021elite} B. Safaei, A. M. Hosseini Monazzah, and A. Ejlali, ``ELITE: An elaborated cross-layer RPL objective function to achieve energy efficiency in Internet-of-Things devices,'' \emph{IEEE Internet Things J.}, vol. 8, no. 2, pp. 1169--1182, Jan. 2021, doi: 10.1109/JIOT.2020.3011968.
+\bibitem{carroll2010power} A. Carroll and G. Heiser, ``An analysis of power consumption in a smartphone,'' in \emph{Proc. USENIX Annu. Tech. Conf. (USENIX ATC)}, 2010.
+\bibitem{lee2017cas} J. Lee, K. Lee, E. Jeong, J. Jo, and N. B. Shroff, ``CAS: Context-aware background application scheduling in interactive mobile systems,'' \emph{IEEE J. Sel. Areas Commun.}, vol. 35, no. 5, pp. 1013--1029, May 2017, doi: 10.1109/JSAC.2017.2676918.
 \bibitem{ko2025rass} H. Ko, H. Choi, and S. Pack, ``Restoration-aware sleep scheduling framework in energy harvesting Internet of Things: A deep reinforcement learning approach,'' \emph{IEEE Trans. Sustainable Comput.}, vol. 10, no. 1, pp. 190--198, Jan./Feb. 2025, doi: 10.1109/TSUSC.2024.3442918.
-\bibitem{sang2024qos} Q. Sang, J. Yan, R. Xie, C. Hu, K. Suo, and D. Cheng, ``QoS-aware power management via scheduling and governing co-optimization on mobile devices,'' \emph{IEEE Trans. Mobile Comput.}, vol. 23, no. 12, pp. 13654--13669, Dec. 2024, doi: 10.1109/TMC.2024.3438267.
 \bibitem{ruiz2026wakeup} D. E. Ruiz-Guirola, S. Montejo-Sanchez, I. Leyva-Mayorga, Z. Han, P. Popovski, and O. L. A. Lopez, ``Energy management and wakeup for IoT networks powered by energy harvesting,'' \emph{IEEE Internet Things J.}, vol. 13, no. 9, pp. 18574--18591, May 2026, doi: 10.1109/JIOT.2026.3664201.
+\bibitem{karlin1994competitive} A. R. Karlin, M. S. Manasse, L. A. McGeoch, and S. Owicki, ``Competitive randomized algorithms for nonuniform problems,'' \emph{Algorithmica}, vol. 11, no. 6, pp. 542--571, Jun. 1994.
+\bibitem{irani2003online} S. Irani, S. Shukla, and R. Gupta, ``Online strategies for dynamic power management in systems with multiple power-saving states,'' \emph{ACM Trans. Embedded Comput. Syst.}, vol. 2, no. 3, pp. 325--346, Aug. 2003.
+\bibitem{pefkianakis2014idle} I. Pefkianakis, J. Chandrashekar, and H. Lundgren, ``User-driven idle energy save for 802.11x mobile devices,'' in \emph{Proc. IEEE Int. Conf. Mobile Ad Hoc Sensor Syst. (MASS)}, 2014, pp. 282--290, doi: 10.1109/MASS.2014.50.
+\bibitem{kim2012diapause} Y. Kim and J. Kim, ``Personalized Diapause: Reducing radio energy consumption of smartphones by network-context aware dormancy predictions,'' in \emph{Proc. Workshop Power-Aware Computing and Systems (HotPower)}, 2012.
+\bibitem{safaei2021elite} B. Safaei, A. M. Hosseini Monazzah, and A. Ejlali, ``ELITE: An elaborated cross-layer RPL objective function to achieve energy efficiency in Internet-of-Things devices,'' \emph{IEEE Internet Things J.}, vol. 8, no. 2, pp. 1169--1182, Jan. 2021, doi: 10.1109/JIOT.2020.3011968.
+\bibitem{sang2024qos} Q. Sang, J. Yan, R. Xie, C. Hu, K. Suo, and D. Cheng, ``QoS-aware power management via scheduling and governing co-optimization on mobile devices,'' \emph{IEEE Trans. Mobile Comput.}, vol. 23, no. 12, pp. 13654--13669, Dec. 2024, doi: 10.1109/TMC.2024.3438267.
 \end{thebibliography}
 
 \end{document}
