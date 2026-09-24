@@ -6,7 +6,7 @@ This checklist separates manuscript items already addressed from items that requ
 
 - [x] Uses the IEEE two-column journal class (`IEEEtran`, journal mode).
 - [x] Title is concise and explicitly foregrounds heterogeneous IoT systems.
-- [x] Abstract is one paragraph, 211 words, contains no citations and no displayed equations (IoT-J requires 150-250 words).
+- [x] Abstract is one paragraph, 227 words, contains no citations and no displayed equations (IoT-J requires 150-250 words).
 - [x] Keywords include IoT and constrained-device/power-management terminology.
 - [x] Main PDF compiles to exactly 8 pages. IoT-J charges mandatory overlength fees after the first 8 published pages; final typesetting can still shift pagination.
 - [x] Human-subject MOS/QoE results were removed from this submission-ready version because no IRB/ethics-board and consent documentation was available in the source material.
@@ -16,6 +16,10 @@ This checklist separates manuscript items already addressed from items that requ
 - [x] Portability claims are bounded: x86/RISC-V are described as portability checks, not quantitative cross-architecture performance evidence.
 
 ## Must be confirmed by the author before submission
+
+- [ ] **Resolve every red `\authorcheck{...}` marker in `main.tex`** (20 items: parameter values, platform/OS/MCU details, measurement window, baseline definition, per-workload device and mode, context rule table, LR training data, RISC-V check, repository). Then delete the `\authorcheck` macro so the build fails if any marker remains.
+- [ ] **Algorithm 1 must match the evaluated code.** The v4 text formalizes context as fixed per-mode weights, the scale in Eqs. (6)-(7), a break-even floor, and an inhibit flag. If the implementation that produced Table V behaves differently, change the text to describe the code, not the other way round.
+- [ ] **Verify the classical DPM references added in v4** (Benini 2000, Srivastava 1996, Hwang & Wu 2000, Douglis 1995, Helmbold 1996, Simunic 2001, Pallipadi 2007, Karlin 1994, Irani 2003) against DOI/IEEE Xplore/ACM DL records.
 
 - [ ] **Prior publication / extension disclosure.** Confirm whether the 4-page source paper has already been published, accepted, or is under review anywhere. If published/accepted, the IoT-J manuscript must cite it and clearly explain the substantial technical extension in the manuscript and cover letter. If it is under review elsewhere, do not submit concurrently.
 - [ ] **ORCID.** Every listed author must have a registered ORCID linked in the IEEE submission system.

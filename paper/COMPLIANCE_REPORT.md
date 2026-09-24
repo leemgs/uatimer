@@ -7,7 +7,7 @@ Date checked: 2026-09-24
 1. Scope: IoT architecture/enabling technologies/services/applications and IoT trials/experiments are in scope. The revised title, abstract, keywords, and framing foreground heterogeneous IoT endpoints and constrained-device power management.
 2. Original/substantial work: the journal requires original substantial work not under consideration elsewhere. Expanded archival versions of prior conference work may be considered, but prior work must be handled transparently. Status is **conditional** until the author confirms whether the 4-page source paper is already published/accepted/under review.
 3. Format: IoT-J requires the IEEE double-column journal style. Status: **pass**.
-4. Abstract: required length is 150-250 words, one paragraph, no citations or displayed equations. Revised abstract: **211 words; pass**.
+4. Abstract: required length is 150-250 words, one paragraph, no citations or displayed equations. Revised abstract: **227 words; pass**.
 5. ORCID: required for all IEEE journal authors. Status: **author action required**.
 6. Plagiarism/originality screening: all submissions are screened. The revised manuscript removes meta-drafting language and replaces unverified references, but prior-work disclosure still requires author confirmation.
 7. Mandatory page charges: USD 175/page beyond the first 8 published pages. Current compiled manuscript: **8 pages**. Final typesetting may change page count.
