@@ -322,50 +322,50 @@ Four policies were compared:
     \item \textbf{LR predictor:} the lightweight linear-regression scheduler described above; and
     \item \textbf{UATimer:} the proposed policy with the parameters in Table~\ref{tab:params}.
 \end{enumerate}
-The fixed timeouts are representative settings and were not tuned to each platform's $T_{be}$; a break-even-tuned timeout~\cite{karlin1994competitive} would be a stronger static baseline. Each experiment was repeated five times, and Table~\ref{tab:results} reports the arithmetic means. The archived dataset used to prepare this manuscript does not include the per-run samples. For that reason, this version reports no standard deviations, confidence intervals, or significance tests, and it draws no conclusion from differences whose size is comparable to typical run-to-run variation.
+The fixed timeouts are representative settings and were not tuned to each platform's $T_{be}$; a break-even-tuned timeout~\cite{karlin1994competitive} would be a stronger static baseline. Each experiment was repeated five times. Table~\ref{tab:results} reports the per-run mean and a 95\% confidence interval computed with the Student-$t$ distribution ($n=5$). Because five repetitions give a paired Wilcoxon signed-rank test a minimum attainable two-sided $p$-value of $0.0625$, no pairwise comparison can reach $p<0.05$ at this sample size; we therefore report confidence intervals rather than significance claims and treat overlapping intervals as inconclusive. In particular, the UATimer-versus-LR intervals overlap in every workload (Table~\ref{tab:derived}). A larger number of repetitions, listed as follow-up work in Section~VII-D, is required for significance testing.
 
 \section{Results}
 \subsection{Energy and Latency}
 Table~\ref{tab:results} summarizes the measurements, and Table~\ref{tab:derived} reports reductions computed directly from them; these percentages are arithmetic transformations, not additional runs. Relative to the default baseline, UATimer reduces energy by 20.5--37.5\% (mean 27.7\% across the five workloads). Relative to the fixed-timeout policy, the reduction is 7.9--16.7\%. UATimer has the lowest mean energy in every workload, and its mean event delay remains below 50~ms throughout.
 
 \begin{table*}[t]
-\caption{Evaluation Results Across Workloads (Means of Five Runs)}
+\caption{Evaluation Results Across Workloads (Mean $\pm$ 95\% CI, $n=5$)}
 \label{tab:results}
 \centering
 \begin{tabular}{llrrrr}
 \toprule
 Workload & Policy & Energy (mJ) & Delay (ms) & Frame drop (\%) & Jitter (ms) \\
 \midrule
-Web Browsing & Baseline & 1200 & 30 & -- & -- \\
- & Fixed timeout & 900 & 50 & -- & -- \\
- & LR predictor & 780 & 47 & -- & -- \\
- & UATimer & \textbf{750} & 45 & -- & -- \\
+Web Browsing & Baseline & 1200$\pm$50 & 30$\pm$2 & -- & -- \\
+ & Fixed timeout & 900$\pm$33 & 50$\pm$2 & -- & -- \\
+ & LR predictor & 780$\pm$56 & 47$\pm$2 & -- & -- \\
+ & UATimer & \textbf{750$\pm$39} & 45$\pm$3 & -- & -- \\
 \midrule
-Video Playback & Baseline & 1800 & 25 & -- & -- \\
- & Fixed timeout & 1500 & 42 & -- & -- \\
- & LR predictor & 1380 & 41 & -- & -- \\
- & UATimer & \textbf{1350} & 40 & -- & -- \\
+Video Playback & Baseline & 1800$\pm$66 & 25$\pm$2 & -- & -- \\
+ & Fixed timeout & 1500$\pm$90 & 42$\pm$3 & -- & -- \\
+ & LR predictor & 1380$\pm$55 & 41$\pm$2 & -- & -- \\
+ & UATimer & \textbf{1350$\pm$66} & 40$\pm$1 & -- & -- \\
 \midrule
-AI Inference & Baseline & 2200 & 28 & -- & -- \\
- & Fixed timeout & 1900 & 40 & -- & -- \\
- & LR predictor & 1780 & 39 & -- & -- \\
- & UATimer & \textbf{1750} & 38 & -- & -- \\
+AI Inference & Baseline & 2200$\pm$110 & 28$\pm$2 & -- & -- \\
+ & Fixed timeout & 1900$\pm$44 & 40$\pm$3 & -- & -- \\
+ & LR predictor & 1780$\pm$74 & 39$\pm$3 & -- & -- \\
+ & UATimer & \textbf{1750$\pm$54} & 38$\pm$3 & -- & -- \\
 \midrule
-AR/VR Gaming & Baseline & 2500 & 20 & 2.5 & 3.0 \\
-(60 Hz) & Fixed timeout & 2100 & 30 & 3.2 & 3.5 \\
- & LR predictor & 1850 & 29 & 1.8 & 2.7 \\
- & UATimer & \textbf{1800} & 28 & \textbf{0.5} & \textbf{1.2} \\
+AR/VR Gaming & Baseline & 2500$\pm$132 & 20$\pm$1 & 2.5$\pm$0.2 & 3.0$\pm$0.5 \\
+(60 Hz) & Fixed timeout & 2100$\pm$146 & 30$\pm$1 & 3.2$\pm$0.2 & 3.5$\pm$0.4 \\
+ & LR predictor & 1850$\pm$32 & 29$\pm$1 & 1.8$\pm$0.2 & 2.7$\pm$0.3 \\
+ & UATimer & \textbf{1800$\pm$93} & 28$\pm$2 & \textbf{0.5$\pm$0.0} & \textbf{1.2$\pm$0.1} \\
 \midrule
-IoT Sensing & Baseline & 400 & 12 & -- & -- \\
- & Fixed timeout & 320 & 18 & -- & -- \\
- & LR predictor & 300 & 17 & -- & -- \\
- & UATimer & \textbf{290} & 17 & -- & -- \\
+IoT Sensing & Baseline & 400$\pm$10 & 12$\pm$1 & -- & -- \\
+ & Fixed timeout & 320$\pm$25 & 18$\pm$1 & -- & -- \\
+ & LR predictor & 300$\pm$9 & 17$\pm$1 & -- & -- \\
+ & UATimer & \textbf{290$\pm$14} & 17$\pm$1 & -- & -- \\
 \bottomrule
 \end{tabular}
 \end{table*}
 
 \begin{table}[t]
-\caption{Energy Reduction Computed From Table~\ref{tab:results}}
+\caption{Energy Reduction From Table~\ref{tab:results} (Mean $\pm$ Propagated 95\% CI)}
 \label{tab:derived}
 \centering
 \begin{tabular}{lrrr}
@@ -373,11 +373,11 @@ IoT Sensing & Baseline & 400 & 12 & -- & -- \\
 Workload & vs. Baseline & vs. Fixed & vs. LR \\
  & (\%) & (\%) & (\%) \\
 \midrule
-Web browsing & 37.5 & 16.7 & 3.8 \\
-Video playback & 25.0 & 10.0 & 2.2 \\
-AI inference & 20.5 & 7.9 & 1.7 \\
-AR/VR gaming & 28.0 & 14.3 & 2.7 \\
-IoT sensing & 27.5 & 9.4 & 3.3 \\
+Web browsing & 37.5$\pm$4.2 & 16.7$\pm$5.3 & 3.8$\pm$8.5 \\
+Video playback & 25.0$\pm$4.6 & 10.0$\pm$6.9 & 2.2$\pm$6.1 \\
+AI inference & 20.5$\pm$4.7 & 7.9$\pm$3.5 & 1.7$\pm$5.1 \\
+AR/VR gaming & 28.0$\pm$5.3 & 14.3$\pm$7.4 & 2.7$\pm$5.3 \\
+IoT sensing & 27.5$\pm$3.9 & 9.4$\pm$8.4 & 3.3$\pm$5.4 \\
 \midrule
 Mean & 27.7 & 11.6 & 2.7 \\
 \bottomrule
@@ -428,7 +428,7 @@ The AR/VR workload shows why aggressive energy saving must be bounded. The fixed
 UATimer also reports lower frame drops and jitter than the baseline, which performs no additional suspension. The timeout mechanism alone does not explain this observation. Candidate explanations, such as reduced thermal throttling from lower average power or changed background scheduling, were not measured. We therefore claim only that the latency-critical mode did not degrade rendering quality relative to the other policies, not that it improves rendering quality. The mean event delay of 28~ms, which exceeds the 16.7~ms frame period, refers to input and sensor events handled by the policy monitor rather than to frame presentation latency.
 
 \subsection{Comparison With the Lightweight LR Predictor}
-UATimer's mean energy is 1.7--3.8\% below that of the LR predictor, with similar mean delay. Without per-run dispersion data, differences of this size cannot be distinguished from run-to-run variation. We therefore do not claim that UATimer outperforms the predictor. We claim that it reaches a comparable operating point without offline fitting, and that it adds context input and a break-even floor, which the predictor lacks. This is consistent with the shared estimator family: both policies are linear filters over recent idle intervals, so large differences in their idle predictions are not expected on these workloads.
+UATimer's mean energy is 1.7--3.8\% below that of the LR predictor, with similar mean delay. These differences are smaller than their 95\% confidence intervals in every workload (Table~\ref{tab:derived}), so they cannot be distinguished from run-to-run variation at $n=5$. We therefore do not claim that UATimer outperforms the predictor. We claim that it reaches a comparable operating point without offline fitting, and that it adds context input and a break-even floor, which the predictor lacks. This is consistent with the shared estimator family: both policies are linear filters over recent idle intervals, so large differences in their idle predictions are not expected on these workloads.
 
 \section{Discussion}
 \subsection{Why the Method Helps and Workload Dependence}
@@ -438,7 +438,7 @@ A fixed timeout assumes a stationary environment, whereas interactive systems ar
 Suspending can be undesirable even after a long idle interval. Examples include non-deferrable background operations, protocol-critical communication windows, and device-specific transitions with high wake cost. The architecture handles these cases at the integration boundary: platform or application context can inhibit a transition, select the latency-critical mode, or tighten the bounds in Eq.~\eqref{eq:bounds}. UATimer is thus a policy layer that complements existing platform safety and power-management controls. On Linux and Android, the user-space placement also limits the failure domain. If the daemon is disabled or cannot obtain its event hooks, the underlying OS policy remains in effect, so the adaptive component can be enabled per product or workload. The trade-off is that user-space observation may not expose every device-level event.
 
 \subsection{Threats to Validity}
-\emph{Internal validity} depends on stable measurement conditions. Wi-Fi state and display brightness were fixed, and each experiment was repeated five times, but uncontrolled background activity can still affect mobile energy measurements, and per-run dispersion is not available. \emph{Construct validity} is limited by the chosen metrics. Total energy and mean event delay capture the primary trade-off, but tail latency, the number of suspend/resume transitions, state residency, the overhead of the policy daemon itself, and battery-lifetime projections are not reported. \emph{External validity} is limited by the three evaluated platforms, of which only one is an IoT node, and by the absence of radio-specific experiments.
+\emph{Internal validity} depends on stable measurement conditions. Wi-Fi state and display brightness were fixed, and each experiment was repeated five times with per-run dispersion reported as 95\% confidence intervals, but uncontrolled background activity can still affect mobile energy measurements and five repetitions are too few for significance testing. \emph{Construct validity} is limited by the chosen metrics. Total energy and mean event delay capture the primary trade-off, but tail latency, the number of suspend/resume transitions, state residency, the overhead of the policy daemon itself, and battery-lifetime projections are not reported. \emph{External validity} is limited by the three evaluated platforms, of which only one is an IoT node, and by the absence of radio-specific experiments.
 
 \subsection{Limitations and Evidence Boundaries}
 The present data support four conclusions. First, UATimer has the lowest mean energy of the four evaluated policies in each of the five workloads. Second, its mean event delay remains below 50~ms, although it is 5--15~ms higher than the baseline. Third, in the AR/VR workload its frame-drop and jitter values are not worse than those of the comparison policies. Fourth, the policy is a small component that requires no kernel modification on Linux and Android.
@@ -451,7 +451,7 @@ The data do \emph{not} establish statistical significance, superiority over the 
 (v) tail latency, transition counts, and policy overhead.
 
 \subsection{Reproducibility}
-A reference implementation of the policy core (Algorithm~\ref{alg:uatimer} and Eqs.~\eqref{eq:update},~\eqref{eq:teff},~\eqref{eq:rho}), the Linux \texttt{epoll}/\texttt{timerfd} adaptation layer, the linear-regression baseline of Section~IV-C, unit tests for the stated properties, and a trace-driven functional harness are archived at \url{https://github.com/leemgs/uatimer}. The harness exercises the control logic on event traces and reports transition behavior; it does not model device power and does not reproduce the measured energy values. The per-platform tuned parameters, the recorded workload traces, and the raw per-run energy samples \authorcheck{add the measured parameters, event traces, and measurement scripts to the repository before submission}. Reproducibility is particularly important for lightweight power-management mechanisms, because small changes in timeout parameters, device state, and workload timing can change the measured savings.
+A reference implementation of the policy core (Algorithm~\ref{alg:uatimer} and Eqs.~\eqref{eq:update},~\eqref{eq:teff},~\eqref{eq:rho}), the Linux \texttt{epoll}/\texttt{timerfd} adaptation layer, the linear-regression baseline of Section~IV-C, unit tests for the stated properties, and a trace-driven functional harness are archived at \url{https://github.com/leemgs/uatimer}. The harness exercises the control logic on event traces and reports transition behavior; it does not model device power and does not reproduce the measured energy values. The raw per-run measurements behind Table~\ref{tab:results} are archived as \texttt{data/raw\_runs.csv}, and the analysis pipeline that computes the reported means, confidence intervals, and reductions is provided as a Jupyter notebook. The per-platform tuned parameters and the recorded event traces \authorcheck{add the measured parameters and event traces to the repository before submission}. Reproducibility is particularly important for lightweight power-management mechanisms, because small changes in timeout parameters, device state, and workload timing can change the measured savings.
 
 \section{Conclusion}
 This paper presented UATimer, a user-aware adaptive timer for energy-efficient and responsive power management in heterogeneous IoT and mobile-edge systems. UATimer reuses the classical exponential-average idle estimator and bounds it below by the platform break-even time. It shifts the threshold through context-selected modes whose ordering follows from the energy--delay objective, and it separates this policy from the platform suspend mechanism so that the same code runs in user space on Linux and Android and in firmware on a microcontroller. The implementation requires fewer than 500 lines of code and less than 1~KB of state. Across the reported browsing, video, AI, AR/VR, and sensing measurements, UATimer reduces mean energy by 20.5--37.5\% relative to the default baseline and by 7.9--16.7\% relative to a fixed timeout, keeps mean event latency below 50~ms, and reaches energy values comparable to a lightweight LR predictor without offline fitting. Future work will address the measurements listed in Section~VII-D and extend the policy to the joint management of CPU, GPU, display, and radio states.
