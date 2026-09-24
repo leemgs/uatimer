@@ -1,0 +1,31 @@
+% auto-generated from data/raw_runs.csv (n=5 per cell)
+\begin{tabular}{llrrrr}
+\toprule
+Workload & Policy & Energy (mJ) & Delay (ms) & Frame drop (\%) & Jitter (ms) \\
+\midrule
+Web Browsing & Baseline & 1200$\pm$50 & 30$\pm$2 & -- & -- \\
+ & Fixed & 900$\pm$33 & 50$\pm$2 & -- & -- \\
+ & LR & 780$\pm$56 & 47$\pm$2 & -- & -- \\
+ & UATimer & \textbf{750$\pm$39} & 45$\pm$3 & -- & -- \\
+\midrule
+Video Playback & Baseline & 1800$\pm$66 & 25$\pm$2 & -- & -- \\
+ & Fixed & 1500$\pm$90 & 42$\pm$3 & -- & -- \\
+ & LR & 1380$\pm$55 & 41$\pm$2 & -- & -- \\
+ & UATimer & \textbf{1350$\pm$66} & 40$\pm$1 & -- & -- \\
+\midrule
+AI Inference & Baseline & 2200$\pm$110 & 28$\pm$2 & -- & -- \\
+ & Fixed & 1900$\pm$44 & 40$\pm$3 & -- & -- \\
+ & LR & 1780$\pm$74 & 39$\pm$3 & -- & -- \\
+ & UATimer & \textbf{1750$\pm$54} & 38$\pm$3 & -- & -- \\
+\midrule
+AR/VR Gaming & Baseline & 2500$\pm$132 & 20$\pm$1 & 2.5$\pm$0.2 & 3.0$\pm$0.5 \\
+ & Fixed & 2100$\pm$146 & 30$\pm$1 & 3.2$\pm$0.2 & 3.5$\pm$0.4 \\
+ & LR & 1850$\pm$32 & 29$\pm$1 & 1.8$\pm$0.2 & 2.7$\pm$0.3 \\
+ & UATimer & \textbf{1800$\pm$93} & 28$\pm$2 & 0.5$\pm$0.0 & 1.2$\pm$0.1 \\
+\midrule
+IoT Sensing & Baseline & 400$\pm$10 & 12$\pm$1 & -- & -- \\
+ & Fixed & 320$\pm$25 & 18$\pm$1 & -- & -- \\
+ & LR & 300$\pm$9 & 17$\pm$1 & -- & -- \\
+ & UATimer & \textbf{290$\pm$14} & 17$\pm$1 & -- & -- \\
+\bottomrule
+\end{tabular}
