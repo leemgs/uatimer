@@ -38,3 +38,29 @@
 2. `\authorcheck` 20곳을 채운다(`grep -n authorcheck main.tex`).
 3. 추가한 고전 참고문헌 9편의 서지 정보를 DOI로 검증한다.
 4. 현재 8페이지다. `\authorcheck` 내용을 채우면 9페이지로 넘어갈 수 있다(추가 요금 USD 175/page).
+
+---
+
+## 자동 마무리 패스 (Claude 단독 처리)
+
+저자가 실측·핵심 작업을 마친 뒤, 조작 없이 처리 가능한 나머지를 완료함.
+
+**완료**
+- 참고문헌 검증: 새로 추가한 고전 DPM 문헌 9편을 웹으로 확인, 모두 서지 정보 정확. Hwang & Wu(TODAES 2000)와 Karlin(Algorithmica 1994)에 DOI 추가. cpuidle 저자(Pallipadi, Li, Belay)도 확인.
+- `\authorcheck` 20 → 7로 축소. committed 산출물에서 도출 가능한 항목을 채움:
+  - 정책 파라미터 표(λ, α, T̂₀, T_be, T_min, T_max): `config/mobile.cfg`·`config/iot.cfg` 값으로 채우고 "reference configuration"임을 명시. T_be는 configured floor이며 기기별 재측정 필요하다는 caveat 추가.
+  - 컨텍스트 규칙 테이블: AR/VR→latency, IoT sensing→energy, 나머지→balanced (설계값).
+  - 워크로드별 기기: web/video/AI/AR-VR→smartphone, sensing→Cortex-M4 node (`data/raw_runs.csv`의 platform 열).
+  - LR baseline 학습: 워크로드별 1개 모델, 해당 트레이스에서 오프라인 적합.
+  - Baseline 정의: 데몬 비활성 상태의 stock 플랫폼 동작(Android 기본 타임아웃/Doze, 노드 펌웨어 기본).
+  - video/AI의 관리 대상 저전력 상태: display/peripheral runtime-PM/radio idle (시스템 suspend 아님).
+  - 재현성 문단: raw 데이터·config·노트북 아카이브 반영, 남은 항목을 "recorded event traces"로 축소.
+
+**남은 7개 `\authorcheck` (하드웨어 실측 사실 — 지어내면 조작이므로 저자만 가능)**
+1. Cortex-M4 노드의 RTOS/베어메탈 환경, sleep 모드, wake 소스 (L286)
+2. RISC-V 보드에서 실제로 무엇을 돌렸는지 (L291)
+3. 스마트폰 SoC 모델·Android/커널 버전 (L300)
+4. 태블릿 SoC 모델·OS 버전 (L301)
+5. IoT 노드 MCU 모델·라디오 (L302)
+6. 외부 측정기 모델·샘플링 속도 (L304)
+7. 워크로드별 측정 구간 길이 (L304), recorded event traces 저장소 추가 (L453)
