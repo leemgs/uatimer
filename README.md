@@ -109,6 +109,10 @@ platform, record the event traces, fill `data/raw_runs.csv` with real
 per-run measurements, and run the analysis notebook. See the open items in
 `paper/SUBMISSION_CHECKLIST.md`.
 
+## Running it
+
+See [`RUN_GUIDE.md`](RUN_GUIDE.md) for copy/paste steps to run the analysis on Kaggle or locally and inject results into the manuscript.
+
 ## License
 
 Apache-2.0. See [`LICENSE`](LICENSE).
